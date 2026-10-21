@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
@@ -142,16 +143,18 @@ class MainActivity : AppCompatActivity() {
             if (shadow) return
             for (tower in towers) {
                 val point = mapView.projection.toPixels(GeoPoint(tower.latitude, tower.longitude), null)
+                val x = point.x.toFloat()
+                val y = point.y.toFloat()
                 val radius = 150f
                 val color = when {
-                    tower.signalStrengthDbm >= -70 -> 0x6600FF00.toInt()
-                    tower.signalStrengthDbm >= -85 -> 0x6688FF00.toInt()
-                    tower.signalStrengthDbm >= -100 -> 0x66FFFF00.toInt()
-                    else -> 0x66FF0000.toInt()
+                    tower.signalStrengthDbm >= -70 -> Color.argb(102, 0, 255, 0)
+                    tower.signalStrengthDbm >= -85 -> Color.argb(102, 136, 255, 0)
+                    tower.signalStrengthDbm >= -100 -> Color.argb(102, 255, 255, 0)
+                    else -> Color.argb(102, 255, 0, 0)
                 }
-                val gradient = RadialGradient(point.x, point.y, radius, color, 0x00000000, Shader.TileMode.CLAMP)
+                val gradient = RadialGradient(x, y, radius, color, Color.TRANSPARENT, Shader.TileMode.CLAMP)
                 paint.shader = gradient
-                canvas.drawCircle(point.x, point.y, radius, paint)
+                canvas.drawCircle(x, y, radius, paint)
             }
         }
     }
