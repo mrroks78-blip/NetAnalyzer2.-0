@@ -24,7 +24,6 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.util.IGeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
@@ -38,8 +37,7 @@ class MainActivity : AppCompatActivity() {
     private var isSatellite = false
     private val heatmapOverlay = CoverageHeatmapOverlay()
     private var currentZoom = 15.0
-    // ИСПРАВЛЕНО: тип IGeoPoint вместо GeoPoint
-    private var currentCenter: IGeoPoint = GeoPoint(55.751244, 37.618423)
+    private var currentCenter = GeoPoint(55.751244, 37.618423)
 
     private val satelliteTileSource = XYTileSource(
         "ESRI World Imagery",
@@ -108,8 +106,10 @@ class MainActivity : AppCompatActivity() {
 
         isSatellite = !isSatellite
 
+        // Сохраняем текущее состояние через координаты
         currentZoom = mapView.zoomLevelDouble
-        currentCenter = mapView.mapCenter
+        val center = mapView.mapCenter
+        currentCenter = GeoPoint(center.latitude, center.longitude)
 
         if (isSatellite) {
             clearTileCache()
