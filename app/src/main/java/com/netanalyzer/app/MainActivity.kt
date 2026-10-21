@@ -15,7 +15,6 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.RelativeLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -33,8 +32,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var locationManager: LocationManager
     private lateinit var btnToggleMap: Button
     private var isSatellite = false
+    private val heatmapOverlay = CoverageHeatmapOverlay()
 
-    // Спутниковые тайлы от ESRI (ArcGIS World Imagery)
     private val satelliteTileSource = XYTileSource(
         "ESRI",
         0, 19,
@@ -64,7 +63,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // ВАЖНО: Устанавливаем User-Agent (обязательно для OSMDroid)
         Configuration.getInstance().userAgentValue = packageName
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
 
@@ -85,7 +83,7 @@ class MainActivity : AppCompatActivity() {
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
         mapView.controller.setZoom(15.0)
-        mapView.overlays.add(CoverageHeatmapOverlay())
+        mapView.overlays.add(heatmapOverlay)
     }
 
     private fun toggleMapType() {
@@ -98,14 +96,10 @@ class MainActivity : AppCompatActivity() {
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
         }
-        // Очищаем кэш тайлов и перерисовываем
-        mapView.tileProvider.detach()
         mapView.invalidate()
     }
 
     private fun loadCoverageData() {
-        val heatmap = mapView.overlays.filterIsInstance<CoverageHeatmapOverlay>().firstOrNull()
-        
         for (tower in mockTowers) {
             val geoPoint = GeoPoint(tower.latitude, tower.longitude)
             
@@ -119,7 +113,7 @@ class MainActivity : AppCompatActivity() {
             }
             mapView.overlays.add(marker)
             
-            heatmap?.towers?.add(tower)
+            heatmapOverlay.addTower(tower)
         }
         
         mapView.controller.setCenter(GeoPoint(mockTowers[0].latitude, mockTowers[0].longitude))
@@ -149,4 +143,63 @@ class MainActivity : AppCompatActivity() {
     private fun setupLocationTracking() {
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 101)
+            return
+        }
+        
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000L, 50f, object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                mapView.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+            }
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+        })
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            setupLocationTracking()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        mapView.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        mapView.onPause()
+    }
+
+    private class CoverageHeatmapOverlay : Overlay() {
+        private val towers = mutableListOf<CellTower>()
+        private val paint = Paint()
+
+        fun addTower(tower: CellTower) {
+            towers.add(tower)
+        }
+
+        override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+            if (shadow) return
+            for (tower in towers) {
+                val point = mapView.projection.toPixels(GeoPoint(tower.latitude, tower.longitude), null)
+                val x = point.x.toFloat()
+                val y = point.y.toFloat()
+                val radius = 150f
+                val color = when {
+                    tower.signalStrengthDbm >= -70 -> Color.argb(102, 0, 255, 0)
+                    tower.signalStrengthDbm >= -85 -> Color.argb(102, 136, 255, 0)
+                    tower.signalStrengthDbm >= -100 -> Color.argb(102, 255, 255, 0)
+                    else -> Color.argb(102, 255, 0, 0)
+                }
+                val gradient = RadialGradient(x, y, radius, color, Color.TRANSPARENT, Shader.TileMode.CLAMP)
+                paint.shader = gradient
+                canvas.drawCircle(x, y, radius, paint)
+            }
+        }
+    }
+}
