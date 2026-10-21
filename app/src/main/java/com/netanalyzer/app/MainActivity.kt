@@ -11,6 +11,8 @@ import android.graphics.Shader
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -25,6 +27,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,18 +36,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnToggleMap: Button
     private var isSatellite = false
     private val heatmapOverlay = CoverageHeatmapOverlay()
+    private var currentZoom = 15.0
+    private var currentCenter = GeoPoint(55.751244, 37.618423)
 
-    // Спутниковые тайлы от Google (работают без API ключа)
+    // ПРАВИЛЬНЫЙ источник: ESRI World Imagery с JPEG и плейсхолдерами
     private val satelliteTileSource = XYTileSource(
-        "GoogleSatellite",
-        1, 20,
+        "ESRI World Imagery",
+        1, 19,
         256,
-        "",
+        ".jpg",
         arrayOf(
-            "https://mt1.google.com/vt/lyrs=s&x=",
-            "https://mt2.google.com/vt/lyrs=s&x=",
-            "https://mt3.google.com/vt/lyrs=s&x="
-        )
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        ),
+        "© Esri — World Imagery"
     )
 
     data class CellTower(
@@ -66,9 +71,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        Configuration.getInstance().userAgentValue = "NetAnalyzer"
-        Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
+        // ВАЖНО: Правильный порядок инициализации
+        val prefs = getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
+        Configuration.getInstance().userAgentValue = "NetAnalyzer/1.0"
+        Configuration.getInstance().osmdroidBasePath = File(cacheDir, "osmdroid")
+        Configuration.getInstance().osmdroidTileCache = File(cacheDir, "osmdroid/tiles")
+        Configuration.getInstance().load(this, prefs)
 
+        // Создаём карту
         mapView = MapView(this)
         findViewById<FrameLayout>(R.id.mapContainer).addView(mapView)
 
@@ -85,24 +95,62 @@ class MainActivity : AppCompatActivity() {
     private fun setupMap() {
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
-        mapView.controller.setZoom(15.0)
+        mapView.isFlingEnabled = true
+        mapView.controller.setZoom(currentZoom)
+        mapView.controller.setCenter(currentCenter)
         mapView.overlays.add(heatmapOverlay)
     }
 
     private fun toggleMapType() {
+        // Проверяем интернет
+        if (!isNetworkAvailable()) {
+            Toast.makeText(this, "Нет интернета — снимки не загрузятся", Toast.LENGTH_LONG).show()
+            return
+        }
+
         isSatellite = !isSatellite
+
+        // Сохраняем текущее состояние
+        currentZoom = mapView.zoomLevelDouble
+        currentCenter = mapView.mapCenter
+
         if (isSatellite) {
+            // Очищаем кеш вручную
+            clearTileCache()
             mapView.setTileSource(satelliteTileSource)
-            btnToggleMap.text = " Схема"
-            Toast.makeText(this, "Переключение на спутник...", Toast.LENGTH_SHORT).show()
-            // Принудительно обновляем тайлы
-            mapView.postDelayed({
-                mapView.invalidate()
-            }, 100)
+            btnToggleMap.text = "🗺 Схема"
+            Toast.makeText(this, "Спутник загружается...", Toast.LENGTH_SHORT).show()
         } else {
+            clearTileCache()
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
         }
+
+        // ВОССТАНАВЛИВАЕМ позицию и зум
+        mapView.controller.setZoom(currentZoom)
+        mapView.controller.setCenter(currentCenter)
+        
+        // Принудительная перерисовка
+        mapView.invalidate()
+        mapView.postInvalidate()
+    }
+
+    private fun clearTileCache() {
+        try {
+            val cacheDir = File(cacheDir, "osmdroid/tiles")
+            if (cacheDir.exists()) {
+                cacheDir.deleteRecursively()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun loadCoverageData() {
@@ -122,7 +170,7 @@ class MainActivity : AppCompatActivity() {
             heatmapOverlay.addTower(tower)
         }
         
-        mapView.controller.setCenter(GeoPoint(mockTowers[0].latitude, mockTowers[0].longitude))
+        mapView.controller.setCenter(currentCenter)
     }
 
     private fun showTowerDetails(tower: CellTower) {
@@ -155,7 +203,8 @@ class MainActivity : AppCompatActivity() {
         
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000L, 50f, object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                mapView.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+                currentCenter = GeoPoint(location.latitude, location.longitude)
+                mapView.controller.setCenter(currentCenter)
             }
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
             override fun onProviderEnabled(provider: String) {}
