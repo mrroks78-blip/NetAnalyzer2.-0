@@ -34,14 +34,16 @@ class MainActivity : AppCompatActivity() {
     private var isSatellite = false
     private val heatmapOverlay = CoverageHeatmapOverlay()
 
+    // Спутниковые тайлы от ESRI World Imagery
     private val satelliteTileSource = XYTileSource(
-        "ESRI",
-        0, 19,
+        "ESRI Satellite",
+        1, 19,
         256,
-        ".png",
+        ".jpg",
         arrayOf(
             "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"
-        )
+        ),
+        "© Esri"
     )
 
     data class CellTower(
@@ -63,7 +65,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        Configuration.getInstance().userAgentValue = packageName
+        Configuration.getInstance().userAgentValue = "NetAnalyzer/1.0"
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
 
         mapView = MapView(this)
@@ -89,14 +91,19 @@ class MainActivity : AppCompatActivity() {
     private fun toggleMapType() {
         isSatellite = !isSatellite
         if (isSatellite) {
+            // Очищаем кэш перед переключением
+            mapView.tileProvider.clearTileCache()
             mapView.setTileSource(satelliteTileSource)
             btnToggleMap.text = "🗺 Схема"
             Toast.makeText(this, "Загрузка спутниковых снимков...", Toast.LENGTH_SHORT).show()
         } else {
+            mapView.tileProvider.clearTileCache()
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
         }
+        // Перезагружаем карту
         mapView.invalidate()
+        mapView.postInvalidate()
     }
 
     private fun loadCoverageData() {
