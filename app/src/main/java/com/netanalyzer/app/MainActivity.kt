@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.RelativeLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import org.osmdroid.config.Configuration
@@ -32,7 +33,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnToggleMap: Button
     private var isSatellite = false
 
-    // Спутниковые тайлы от ESRI (ArcGIS)
     private val satelliteTileSource = XYTileSource(
         "ESRI Satellite",
         0, 19,
@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
 
         mapView = MapView(this)
-        (findViewById<FrameLayout>(R.id.mapContainer)).addView(mapView)
+        findViewById<FrameLayout>(R.id.mapContainer).addView(mapView)
 
         btnToggleMap = findViewById(R.id.btnToggleMap)
         btnToggleMap.setOnClickListener {
@@ -86,10 +86,10 @@ class MainActivity : AppCompatActivity() {
         isSatellite = !isSatellite
         if (isSatellite) {
             mapView.setTileSource(satelliteTileSource)
-            btnToggleMap.text = "Схема"
+            btnToggleMap.text = "🗺 Схема"
         } else {
             mapView.setTileSource(TileSourceFactory.MAPNIK)
-            btnToggleMap.text = "Спутник"
+            btnToggleMap.text = "🛰 Спутник"
         }
     }
 
@@ -119,12 +119,11 @@ class MainActivity : AppCompatActivity() {
     private fun showTowerDetails(tower: CellTower) {
         val explanation = getExplanation(tower.signalStrengthDbm)
         
-        val dialog = android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog.Builder(this)
             .setTitle("${tower.operator} (${tower.networkType})")
             .setMessage("Уровень сигнала: ${tower.signalStrengthDbm} dBm\n\nЧто это значит:\n$explanation")
             .setPositiveButton("OK", null)
-            .create()
-        dialog.show()
+            .show()
     }
 
     private fun getExplanation(dbm: Int): String {
