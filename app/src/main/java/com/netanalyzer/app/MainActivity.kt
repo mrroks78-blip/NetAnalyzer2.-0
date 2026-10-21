@@ -34,16 +34,17 @@ class MainActivity : AppCompatActivity() {
     private var isSatellite = false
     private val heatmapOverlay = CoverageHeatmapOverlay()
 
-    // Спутниковые тайлы от ESRI World Imagery
+    // Спутниковые тайлы от Google (работают без API ключа)
     private val satelliteTileSource = XYTileSource(
-        "ESRI Satellite",
-        1, 19,
+        "GoogleSatellite",
+        1, 20,
         256,
-        ".jpg",
+        "",
         arrayOf(
-            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"
-        ),
-        "© Esri"
+            "https://mt1.google.com/vt/lyrs=s&x=",
+            "https://mt2.google.com/vt/lyrs=s&x=",
+            "https://mt3.google.com/vt/lyrs=s&x="
+        )
     )
 
     data class CellTower(
@@ -65,7 +66,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        Configuration.getInstance().userAgentValue = "NetAnalyzer/1.0"
+        Configuration.getInstance().userAgentValue = "NetAnalyzer"
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
 
         mapView = MapView(this)
@@ -91,19 +92,17 @@ class MainActivity : AppCompatActivity() {
     private fun toggleMapType() {
         isSatellite = !isSatellite
         if (isSatellite) {
-            // Очищаем кэш перед переключением
-            mapView.tileProvider.clearTileCache()
             mapView.setTileSource(satelliteTileSource)
-            btnToggleMap.text = "🗺 Схема"
-            Toast.makeText(this, "Загрузка спутниковых снимков...", Toast.LENGTH_SHORT).show()
+            btnToggleMap.text = " Схема"
+            Toast.makeText(this, "Переключение на спутник...", Toast.LENGTH_SHORT).show()
+            // Принудительно обновляем тайлы
+            mapView.postDelayed({
+                mapView.invalidate()
+            }, 100)
         } else {
-            mapView.tileProvider.clearTileCache()
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
         }
-        // Перезагружаем карту
-        mapView.invalidate()
-        mapView.postInvalidate()
     }
 
     private fun loadCoverageData() {
@@ -124,7 +123,6 @@ class MainActivity : AppCompatActivity() {
         }
         
         mapView.controller.setCenter(GeoPoint(mockTowers[0].latitude, mockTowers[0].longitude))
-        mapView.invalidate()
     }
 
     private fun showTowerDetails(tower: CellTower) {
