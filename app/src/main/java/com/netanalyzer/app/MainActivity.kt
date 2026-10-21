@@ -24,6 +24,7 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.IGeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
@@ -37,9 +38,9 @@ class MainActivity : AppCompatActivity() {
     private var isSatellite = false
     private val heatmapOverlay = CoverageHeatmapOverlay()
     private var currentZoom = 15.0
-    private var currentCenter = GeoPoint(55.751244, 37.618423)
+    // ИСПРАВЛЕНО: тип IGeoPoint вместо GeoPoint
+    private var currentCenter: IGeoPoint = GeoPoint(55.751244, 37.618423)
 
-    // ПРАВИЛЬНЫЙ источник: ESRI World Imagery с JPEG и плейсхолдерами
     private val satelliteTileSource = XYTileSource(
         "ESRI World Imagery",
         1, 19,
@@ -71,14 +72,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // ВАЖНО: Правильный порядок инициализации
         val prefs = getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
         Configuration.getInstance().userAgentValue = "NetAnalyzer/1.0"
         Configuration.getInstance().osmdroidBasePath = File(cacheDir, "osmdroid")
         Configuration.getInstance().osmdroidTileCache = File(cacheDir, "osmdroid/tiles")
         Configuration.getInstance().load(this, prefs)
 
-        // Создаём карту
         mapView = MapView(this)
         findViewById<FrameLayout>(R.id.mapContainer).addView(mapView)
 
@@ -102,7 +101,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleMapType() {
-        // Проверяем интернет
         if (!isNetworkAvailable()) {
             Toast.makeText(this, "Нет интернета — снимки не загрузятся", Toast.LENGTH_LONG).show()
             return
@@ -110,12 +108,10 @@ class MainActivity : AppCompatActivity() {
 
         isSatellite = !isSatellite
 
-        // Сохраняем текущее состояние
         currentZoom = mapView.zoomLevelDouble
         currentCenter = mapView.mapCenter
 
         if (isSatellite) {
-            // Очищаем кеш вручную
             clearTileCache()
             mapView.setTileSource(satelliteTileSource)
             btnToggleMap.text = "🗺 Схема"
@@ -126,11 +122,8 @@ class MainActivity : AppCompatActivity() {
             btnToggleMap.text = "🛰 Спутник"
         }
 
-        // ВОССТАНАВЛИВАЕМ позицию и зум
         mapView.controller.setZoom(currentZoom)
         mapView.controller.setCenter(currentCenter)
-        
-        // Принудительная перерисовка
         mapView.invalidate()
         mapView.postInvalidate()
     }
