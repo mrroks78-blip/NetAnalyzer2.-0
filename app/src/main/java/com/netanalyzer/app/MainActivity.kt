@@ -13,10 +13,13 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.view.View
+import android.widget.Button
+import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
@@ -26,6 +29,17 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var mapView: MapView
     private lateinit var locationManager: LocationManager
+    private lateinit var btnToggleMap: Button
+    private var isSatellite = false
+
+    // Спутниковые тайлы от ESRI (ArcGIS)
+    private val satelliteTileSource = XYTileSource(
+        "ESRI Satellite",
+        0, 19,
+        256,
+        ".jpg",
+        arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")
+    )
 
     data class CellTower(
         val id: String,
@@ -49,7 +63,12 @@ class MainActivity : AppCompatActivity() {
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
 
         mapView = MapView(this)
-        (findViewById<View>(R.id.mapContainer) as android.widget.FrameLayout).addView(mapView)
+        (findViewById<FrameLayout>(R.id.mapContainer)).addView(mapView)
+
+        btnToggleMap = findViewById(R.id.btnToggleMap)
+        btnToggleMap.setOnClickListener {
+            toggleMapType()
+        }
 
         setupMap()
         loadCoverageData()
@@ -61,6 +80,17 @@ class MainActivity : AppCompatActivity() {
         mapView.setMultiTouchControls(true)
         mapView.controller.setZoom(15.0)
         mapView.overlays.add(CoverageHeatmapOverlay())
+    }
+
+    private fun toggleMapType() {
+        isSatellite = !isSatellite
+        if (isSatellite) {
+            mapView.setTileSource(satelliteTileSource)
+            btnToggleMap.text = "Схема"
+        } else {
+            mapView.setTileSource(TileSourceFactory.MAPNIK)
+            btnToggleMap.text = "Спутник"
+        }
     }
 
     private fun loadCoverageData() {
