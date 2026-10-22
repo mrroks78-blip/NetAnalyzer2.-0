@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="80dp"
+    android:height="80dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    
+    <!-- Фон компаса -->
+    <circle
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#333333"
+        android:strokeWidth="2"
+        android:cx="50"
+        android:cy="50"
+        android:r="45" />
+    
+    <!-- Северная стрелка (красная) -->
+    <path
+        android:fillColor="#FF0000"
+        android:pathData="M50,10 L55,50 L50,45 L45,50 Z" />
+    
+    <!-- Южная стрелка (белая/серая) -->
+    <path
+        android:fillColor="#CCCCCC"
+        android:pathData="M50,90 L55,50 L50,55 L45,50 Z" />
+    
+    <!-- Центр -->
+    <circle
+        android:fillColor="#333333"
+        android:cx="50"
+        android:cy="50"
+        android:r="4" />
+    
+    <!-- Буква N -->
+    <text
+        android:fillColor="#FF0000"
+        android:fontSize="10"
+        android:fontFamily="sans-serif-bold"
+        android:text="N"
+        android:x="46"
+        android:y="8" />
+</vector>
