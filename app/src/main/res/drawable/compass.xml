@@ -5,38 +5,30 @@
     android:viewportWidth="100"
     android:viewportHeight="100">
     
-    <!-- Фон компаса -->
-    <circle
+    <!-- Фон компаса (белый круг с обводкой) -->
+    <path
         android:fillColor="#FFFFFF"
         android:strokeColor="#333333"
         android:strokeWidth="2"
-        android:cx="50"
-        android:cy="50"
-        android:r="45" />
+        android:pathData="M50,5 A45,45 0 1,1 49.99,5 Z" />
     
-    <!-- Северная стрелка (красная) -->
+    <!-- Северная стрелка (красная, указывает вверх) -->
     <path
         android:fillColor="#FF0000"
         android:pathData="M50,10 L55,50 L50,45 L45,50 Z" />
     
-    <!-- Южная стрелка (белая/серая) -->
+    <!-- Южная стрелка (серая, указывает вниз) -->
     <path
         android:fillColor="#CCCCCC"
         android:pathData="M50,90 L55,50 L50,55 L45,50 Z" />
     
-    <!-- Центр -->
-    <circle
+    <!-- Центральная точка -->
+    <path
         android:fillColor="#333333"
-        android:cx="50"
-        android:cy="50"
-        android:r="4" />
+        android:pathData="M50,46 A4,4 0 1,1 49.99,46 Z" />
     
-    <!-- Буква N -->
-    <text
+    <!-- Буква N (север) - нарисована как path -->
+    <path
         android:fillColor="#FF0000"
-        android:fontSize="10"
-        android:fontFamily="sans-serif-bold"
-        android:text="N"
-        android:x="46"
-        android:y="8" />
+        android:pathData="M46,8 L46,18 L48,18 L48,12 L50,16 L52,12 L52,18 L54,18 L54,8 L52,8 L50,13 L48,8 Z" />
 </vector>
