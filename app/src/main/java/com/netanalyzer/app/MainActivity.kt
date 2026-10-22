@@ -21,6 +21,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.animation.Animation
 import android.view.animation.RotateAnimation
@@ -71,7 +72,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     // Источники карт: Яндекс (приоритет для РФ) + другие
     private val satelliteSources = listOf(
-        // Яндекс Спутник (работает в РФ)
         XYTileSource(
             "Yandex Satellite",
             1, 19, 256, ".jpg",
@@ -82,7 +82,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© Яндекс"
         ),
-        // Яндекс Схема (fallback)
         XYTileSource(
             "Yandex Map",
             1, 19, 256, ".png",
@@ -92,14 +91,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© Яндекс"
         ),
-        // ESRI World Imagery
         XYTileSource(
             "ESRI World Imagery",
             1, 19, 256, ".jpg",
             arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"),
             "© Esri"
         ),
-        // Google Satellite
         XYTileSource(
             "Google Satellite",
             1, 20, 256, "",
@@ -110,7 +107,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© Google"
         ),
-        // OpenTopoMap
         XYTileSource(
             "OpenTopoMap",
             1, 17, 256, ".png",
@@ -167,16 +163,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun createUIElements() {
-        // Индикатор загрузки (компактный)
         loadingIndicator = ProgressBar(this).apply {
             visibility = View.GONE
         }
-        val loadingParams = FrameLayout.LayoutParams(
-            120, 120, Gravity.CENTER
-        )
+        val loadingParams = FrameLayout.LayoutParams(120, 120, Gravity.CENTER)
         mapContainer.addView(loadingIndicator, loadingParams)
 
-        // Текст статуса (компактный)
         statusText = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
@@ -193,7 +185,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         mapContainer.addView(statusText, statusParams)
 
-        // Кнопка переключения карты (компактная)
         btnToggleMap = Button(this).apply {
             text = "🛰 Спутник"
             setBackgroundColor(Color.parseColor("#2196F3"))
@@ -212,7 +203,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         mapContainer.addView(btnToggleMap, btnToggleParams)
 
-        // Кнопка моего местоположения (компактная)
         btnMyLocation = Button(this).apply {
             text = "📍"
             setBackgroundColor(Color.parseColor("#4CAF50"))
@@ -221,21 +211,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             textSize = 20f
             setOnClickListener { goToMyLocation() }
         }
-        val btnLocParams = FrameLayout.LayoutParams(
-            100, 100
-        ).apply {
+        val btnLocParams = FrameLayout.LayoutParams(100, 100).apply {
             gravity = Gravity.BOTTOM or Gravity.END
             setMargins(12, 12, 12, 12)
         }
         mapContainer.addView(btnMyLocation, btnLocParams)
 
-        // Компас (компактный)
         compassView = ImageView(this)
         compassView.setImageResource(R.drawable.compass)
         compassView.elevation = 8f
-        val compassParams = FrameLayout.LayoutParams(
-            100, 100
-        ).apply {
+        val compassParams = FrameLayout.LayoutParams(100, 100).apply {
             gravity = Gravity.TOP or Gravity.START
             setMargins(12, 12, 12, 12)
         }
@@ -266,11 +251,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (isSatellite) {
             currentSatelliteIndex = 0
             loadSatelliteSourceWithFallback()
-            btnToggleMap.text = " Схема"
+            btnToggleMap.text = "🗺 Схема"
         } else {
             cancelTileLoadTimeout()
             mapView.setTileSource(TileSourceFactory.MAPNIK)
-            btnToggleMap.text = "🛰 Спутник"
+            btnToggleMap.text = " Спутник"
             hideLoading()
         }
 
