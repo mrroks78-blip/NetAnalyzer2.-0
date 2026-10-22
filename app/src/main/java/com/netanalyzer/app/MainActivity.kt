@@ -3,6 +3,7 @@ package com.netanalyzer.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
@@ -18,6 +19,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -50,15 +52,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     companion object {
         private const val TAG = "NetAnalyzer"
         private const val LOCATION_PERMISSION_REQUEST = 101
-        private const val FIRST_TILE_TIMEOUT_MS = 20000L
-        private const val SUBSEQUENT_TILE_TIMEOUT_MS = 8000L
+        private const val FIRST_TILE_TIMEOUT_MS = 25000L // 25с для первого
+        private const val SUBSEQUENT_TILE_TIMEOUT_MS = 10000L // 10с для остальных
         private const val COMPASS_SMOOTHING_WINDOW = 8
+        
+        // Ссылка на скачивание офлайн карт (Москва и МО)
+        private const val OFFLINE_MAPS_URL = "https://download.openstreetmap.org/extracts/russia/moscow.osm.pbf"
     }
 
     private lateinit var mapView: MapView
     private lateinit var mapContainer: FrameLayout
     private lateinit var btnToggleMap: Button
     private lateinit var btnMyLocation: Button
+    private lateinit var btnOfflineMaps: Button
     private lateinit var compassView: ImageView
     private lateinit var loadingIndicator: ProgressBar
     private lateinit var statusText: TextView
@@ -94,9 +100,60 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val heatmapOverlay = CoverageHeatmapOverlay()
     private val locationListener = LocationUpdateListener()
 
-    // 10 ИСТОЧНИКОВ КАРТ
+    // 10+ ИСТОЧНИКОВ КАРТ (Российские в приоритете)
     private val satelliteSources = listOf(
-        // 1. ESRI World Imagery
+        // === РОССИЙСКИЕ ИСТОЧНИКИ (приоритет) ===
+        
+        // 1. Космоснимки (Роскосмос) - работает в РФ
+        XYTileSource(
+            "Космоснимки",
+            1, 18, 256, ".jpg",
+            arrayOf(
+                "https://tiles.kosmosnimki.ru/TileService.ashx?ProjectName=Map&LayerName=Satellite&TileMatrixSet=GoogleMapsCompatible&TileMatrix={z}&TileCol={x}&TileRow={y}",
+                "https://tiles2.kosmosnimki.ru/TileService.ashx?ProjectName=Map&LayerName=Satellite&TileMatrixSet=GoogleMapsCompatible&TileMatrix={z}&TileCol={x}&TileRow={y}"
+            ),
+            "© Роскосмос"
+        ),
+        
+        // 2. Яндекс Спутник (неофициальный URL)
+        XYTileSource(
+            "Яндекс Спутник",
+            1, 19, 256, ".jpg",
+            arrayOf(
+                "https://sat01.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}",
+                "https://sat02.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}",
+                "https://sat03.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}",
+                "https://sat04.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}"
+            ),
+            "© Яндекс"
+        ),
+        
+        // 3. 2GIS (работает в РФ)
+        XYTileSource(
+            "2GIS Satellite",
+            1, 19, 256, ".png",
+            arrayOf(
+                "https://tiles01.2gis.com/tiles?x={x}&y={y}&z={z}&v=1",
+                "https://tiles02.2gis.com/tiles?x={x}&y={y}&z={z}&v=1",
+                "https://tiles03.2gis.com/tiles?x={x}&y={y}&z={z}&v=1",
+                "https://tiles04.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
+            ),
+            "© 2GIS"
+        ),
+        
+        // 4. NextGIS (российский сервис)
+        XYTileSource(
+            "NextGIS",
+            1, 18, 256, ".png",
+            arrayOf(
+                "https://api.nextgis.com/public_webmap/1/tile/{z}/{x}/{y}.png"
+            ),
+            "© NextGIS"
+        ),
+        
+        // === МЕЖДУНАРОДНЫЕ ИСТОЧНИКИ ===
+        
+        // 5. ESRI World Imagery
         XYTileSource(
             "ESRI World Imagery",
             1, 19, 256, ".jpg",
@@ -106,18 +163,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© Esri"
         ),
-        // 2. Google Satellite
+        
+        // 6. Google Satellite
         XYTileSource(
             "Google Satellite",
             1, 20, 256, ".png",
             arrayOf(
                 "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
                 "https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-                "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+                "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
             ),
             "© Google"
         ),
-        // 3. OpenTopoMap
+        
+        // 7. OpenTopoMap
         XYTileSource(
             "OpenTopoMap",
             1, 17, 256, ".png",
@@ -128,7 +188,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© OpenTopoMap"
         ),
-        // 4. CartoDB Voyager
+        
+        // 8. CartoDB Voyager
         XYTileSource(
             "CartoDB Voyager",
             1, 19, 256, ".png",
@@ -139,7 +200,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© CartoDB"
         ),
-        // 5. Wikimedia Maps
+        
+        // 9. Wikimedia Maps
         XYTileSource(
             "Wikimedia Maps",
             1, 18, 256, ".png",
@@ -147,6 +209,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"
             ),
             "© Wikimedia"
+        ),
+        
+        // 10. Bing Maps Aerial
+        XYTileSource(
+            "Bing Aerial",
+            1, 19, 256, ".jpg",
+            arrayOf(
+                "https://ecn.t0.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1",
+                "https://ecn.t1.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1",
+                "https://ecn.t2.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1",
+                "https://ecn.t3.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1"
+            ),
+            "© Microsoft Bing"
         )
     )
 
@@ -185,12 +260,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         Configuration.getInstance().osmdroidBasePath = java.io.File(cacheDir, "osmdroid")
         Configuration.getInstance().osmdroidTileCache = java.io.File(cacheDir, "osmdroid/tiles")
         Configuration.getInstance().load(this, prefs)
+        
+        // Проверяем наличие офлайн карт
+        checkOfflineMaps()
+    }
+
+    private fun checkOfflineMaps() {
+        val tileCache = Configuration.getInstance().osmdroidTileCache
+        if (tileCache.exists() && tileCache.listFiles()?.isNotEmpty() == true) {
+            Log.d(TAG, "Офлайн карты найдены: ${tileCache.listFiles()?.size} файлов")
+        } else {
+            Log.d(TAG, "Офлайн карты не найдены")
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun initializeUI() {
         mapContainer = findViewById(R.id.mapContainer)
 
+        // 1. Карта (индекс 0 — внизу)
         mapView = MapView(this)
         val mapParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -198,12 +286,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         )
         mapContainer.addView(mapView, 0, mapParams)
 
+        // 2. Индикатор загрузки
         loadingIndicator = ProgressBar(this).apply {
             visibility = View.GONE
             isIndeterminate = true
         }
-        mapContainer.addView(loadingIndicator, FrameLayout.LayoutParams(100, 100, Gravity.CENTER))
+        mapContainer.addView(loadingIndicator, FrameLayout.LayoutParams(120, 120, Gravity.CENTER))
 
+        // 3. Текст статуса
         statusText = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
@@ -216,9 +306,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.CENTER
-            setMargins(0, 70, 0, 0)
+            setMargins(0, 90, 0, 0)
         })
 
+        // 4. Кнопка переключения карты (правый верхний угол)
         btnToggleMap = createButton("Спутник", Color.parseColor("#2196F3")) { toggleMapType() }
         mapContainer.addView(btnToggleMap, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -228,17 +319,29 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        btnMyLocation = createButton("", Color.parseColor("#4CAF50")) { goToMyLocation() }
-        mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(120, 120).apply {
+        // 5. Кнопка местоположения (правый нижний угол) - С ИКОНКОЙ
+        btnMyLocation = createImageButton(Color.parseColor("#4CAF50")) { goToMyLocation() }
+        mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(140, 140).apply {
             gravity = Gravity.BOTTOM or Gravity.END
             setMargins(16, 16, 16, 16)
         })
 
+        // 6. Кнопка офлайн карт (левый нижний угол)
+        btnOfflineMaps = createButton("Офлайн", Color.parseColor("#FF9800")) { showOfflineMapsDialog() }
+        mapContainer.addView(btnOfflineMaps, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            setMargins(16, 16, 16, 16)
+        })
+
+        // 7. Компас (левый верхний угол) - УВЕЛИЧЕН В 2 РАЗА (160x160)
         compassView = ImageView(this).apply {
             setImageResource(R.drawable.compass)
             elevation = 8f
         }
-        mapContainer.addView(compassView, FrameLayout.LayoutParams(80, 80).apply {
+        mapContainer.addView(compassView, FrameLayout.LayoutParams(160, 160).apply {
             gravity = Gravity.TOP or Gravity.START
             setMargins(16, 16, 16, 16)
         })
@@ -254,6 +357,43 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             textSize = 14f
             setOnClickListener { onClick() }
         }
+    }
+
+    private fun createImageButton(backgroundColor: Int, onClick: () -> Unit): Button {
+        return Button(this).apply {
+            // Устанавливаем иконку как текст (эмодзи)
+            this.text = ""
+            setBackgroundColor(backgroundColor)
+            setTextColor(Color.WHITE)
+            elevation = 8f
+            textSize = 48f // Большая иконка
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun showOfflineMapsDialog() {
+        val message = """
+            Офлайн карты не найдены.
+            
+            Варианты:
+            1. Подключите интернет для загрузки карт
+            2. Скачайте архив с картами:
+               $OFFLINE_MAPS_URL
+            3. Распакуйте в папку:
+               /sdcard/osmdroid/tiles/
+            
+            После распаковки перезапустите приложение.
+        """.trimIndent()
+        
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Офлайн карты")
+            .setMessage(message)
+            .setPositiveButton("Скачать карты") { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(OFFLINE_MAPS_URL))
+                startActivity(intent)
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     private fun initializeServices() {
@@ -312,7 +452,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun toggleMapType() {
         if (!isNetworkAvailable()) {
-            Toast.makeText(this, "Нет интернета", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Нет интернета. Используйте офлайн карты.", Toast.LENGTH_LONG).show()
+            showOfflineMapsDialog()
             return
         }
 
@@ -334,11 +475,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun tryLoadSatelliteSource() {
         if (currentSatelliteIndex >= satelliteSources.size) {
+            Log.e(TAG, "Все ${satelliteSources.size} источников недоступны")
             Toast.makeText(this, "Не удалось загрузить спутниковую карту", Toast.LENGTH_LONG).show()
             isSatellite = false
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "Спутник"
             hideLoading()
+            showOfflineMapsDialog()
             return
         }
 
