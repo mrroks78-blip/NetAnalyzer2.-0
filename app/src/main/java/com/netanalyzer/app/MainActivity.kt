@@ -50,12 +50,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     companion object {
         private const val TAG = "NetAnalyzer"
         private const val LOCATION_PERMISSION_REQUEST = 101
-        private const val FIRST_TILE_TIMEOUT_MS = 20000L // 20с для первого
-        private const val SUBSEQUENT_TILE_TIMEOUT_MS = 8000L // 8с для остальных
+        private const val FIRST_TILE_TIMEOUT_MS = 20000L
+        private const val SUBSEQUENT_TILE_TIMEOUT_MS = 8000L
         private const val COMPASS_SMOOTHING_WINDOW = 8
     }
 
-    // === UI Components ===
     private lateinit var mapView: MapView
     private lateinit var mapContainer: FrameLayout
     private lateinit var btnToggleMap: Button
@@ -64,11 +63,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var loadingIndicator: ProgressBar
     private lateinit var statusText: TextView
 
-    // === Services ===
     private lateinit var locationManager: LocationManager
     private lateinit var sensorManager: SensorManager
 
-    // === State ===
     private var isSatellite = false
     private var currentSatelliteIndex = 0
     private var currentZoom = 15.0
@@ -77,7 +74,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var myLocationOverlay: MyLocationNewOverlay? = null
     private var isLocationPermissionGranted = false
 
-    // === Compass State ===
     private var currentAzimuth = 0f
     private var smoothedAzimuth = 0f
     private val azimuthBuffer = FloatArray(COMPASS_SMOOTHING_WINDOW)
@@ -90,31 +86,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var hasAccelerometer = false
     private var hasMagnetometer = false
 
-    // === Fallback State ===
     private val tileLoadHandler = Handler(Looper.getMainLooper())
     private var tileLoadTimeout: Runnable? = null
     private var isTileLoading = false
     private var isFirstTileLoad = true
 
-    // === Overlays ===
     private val heatmapOverlay = CoverageHeatmapOverlay()
     private val locationListener = LocationUpdateListener()
 
-    // === 10 ИСТОЧНИКОВ КАРТ (максимальное покрытие) ===
+    // 10 ИСТОЧНИКОВ КАРТ
     private val satelliteSources = listOf(
-        // 1. HERE Maps Satellite (глобальный, работает в РФ)
-        XYTileSource(
-            "HERE Satellite",
-            1, 20, 256, ".png",
-            arrayOf(
-                "https://1.aerial.maps.ls.hereapi.com/maptile/2.1/maptile/newest/satellite.day/{z}/{x}/{y}/256/png8?apikey=YOUR_API_KEY",
-                "https://2.aerial.maps.ls.hereapi.com/maptile/2.1/maptile/newest/satellite.day/{z}/{x}/{y}/256/png8?apikey=YOUR_API_KEY",
-                "https://3.aerial.maps.ls.hereapi.com/maptile/2.1/maptile/newest/satellite.day/{z}/{x}/{y}/256/png8?apikey=YOUR_API_KEY",
-                "https://4.aerial.maps.ls.hereapi.com/maptile/2.1/maptile/newest/satellite.day/{z}/{x}/{y}/256/png8?apikey=YOUR_API_KEY"
-            ),
-            "© HERE Technologies"
-        ),
-        // 2. ESRI World Imagery (глобальный)
+        // 1. ESRI World Imagery
         XYTileSource(
             "ESRI World Imagery",
             1, 19, 256, ".jpg",
@@ -124,31 +106,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© Esri"
         ),
-        // 3. Google Satellite (неофициальный)
+        // 2. Google Satellite
         XYTileSource(
             "Google Satellite",
             1, 20, 256, ".png",
             arrayOf(
                 "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
                 "https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-                "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-                "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+                "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
             ),
             "© Google"
         ),
-        // 4. Bing Maps Aerial (Microsoft)
-        XYTileSource(
-            "Bing Aerial",
-            1, 19, 256, ".jpg",
-            arrayOf(
-                "https://ecn.t0.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1",
-                "https://ecn.t1.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1",
-                "https://ecn.t2.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1",
-                "https://ecn.t3.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1"
-            ),
-            "© Microsoft Bing"
-        ),
-        // 5. OpenTopoMap (топографическая)
+        // 3. OpenTopoMap
         XYTileSource(
             "OpenTopoMap",
             1, 17, 256, ".png",
@@ -159,69 +128,28 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ),
             "© OpenTopoMap"
         ),
-        // 6. CartoDB Voyager
+        // 4. CartoDB Voyager
         XYTileSource(
             "CartoDB Voyager",
             1, 19, 256, ".png",
             arrayOf(
                 "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
                 "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-                "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-                "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+                "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
             ),
             "© CartoDB"
         ),
-        // 7. Stamen Terrain (через Stadia)
-        XYTileSource(
-            "Stadia Terrain",
-            1, 18, 256, ".png",
-            arrayOf(
-                "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}.png",
-                "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}.png"
-            ),
-            "© Stadia Maps"
-        ),
-        // 8. Wikimedia Maps
+        // 5. Wikimedia Maps
         XYTileSource(
             "Wikimedia Maps",
             1, 18, 256, ".png",
             arrayOf(
-                "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png",
                 "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"
             ),
             "© Wikimedia"
-        ),
-        // 9. Thunderforest Outdoors
-        XYTileSource(
-            "Thunderforest Outdoors",
-            1, 22, 256, ".png",
-            arrayOf(
-                "https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=YOUR_API_KEY",
-                "https://b.tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=YOUR_API_KEY",
-                "https://c.tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=YOUR_API_KEY"
-            ),
-            "© Thunderforest"
-        ),
-        // 10. MapTiler Satellite (бесплатный tier)
-        XYTileSource(
-            "MapTiler Satellite",
-            1, 22, 256, ".jpg",
-            arrayOf(
-                "https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg?key=YOUR_API_KEY",
-                "https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg?key=YOUR_API_KEY"
-            ),
-            "© MapTiler"
         )
     )
 
-    // Схематичные карты (fallback)
-    private val schematicSources = listOf(
-        TileSourceFactory.MAPNIK,
-        TileSourceFactory.CYCLEMAP,
-        TileSourceFactory.HUMANITARIAN
-    )
-
-    // === Data Models ===
     data class CellTower(
         val id: String,
         val latitude: Double,
@@ -236,8 +164,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         CellTower("2", 55.755244, 37.622423, "Билайн", "5G", -80),
         CellTower("3", 55.749244, 37.610423, "Мегафон", "LTE", -95)
     )
-
-    // === Lifecycle ===
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -259,14 +185,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         Configuration.getInstance().osmdroidBasePath = java.io.File(cacheDir, "osmdroid")
         Configuration.getInstance().osmdroidTileCache = java.io.File(cacheDir, "osmdroid/tiles")
         Configuration.getInstance().load(this, prefs)
-        Log.d(TAG, "OSMDroid initialized, cache: ${Configuration.getInstance().osmdroidTileCache}")
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun initializeUI() {
         mapContainer = findViewById(R.id.mapContainer)
 
-        // 1. Карта (индекс 0 — внизу)
         mapView = MapView(this)
         val mapParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -274,14 +198,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         )
         mapContainer.addView(mapView, 0, mapParams)
 
-        // 2. Индикатор загрузки
         loadingIndicator = ProgressBar(this).apply {
             visibility = View.GONE
             isIndeterminate = true
         }
         mapContainer.addView(loadingIndicator, FrameLayout.LayoutParams(100, 100, Gravity.CENTER))
 
-        // 3. Текст статуса
         statusText = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
@@ -297,7 +219,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(0, 70, 0, 0)
         })
 
-        // 4. Кнопка переключения карты (правый верхний угол)
         btnToggleMap = createButton("Спутник", Color.parseColor("#2196F3")) { toggleMapType() }
         mapContainer.addView(btnToggleMap, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -307,14 +228,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        // 5. Кнопка местоположения (правый нижний угол)
         btnMyLocation = createButton("", Color.parseColor("#4CAF50")) { goToMyLocation() }
         mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(120, 120).apply {
             gravity = Gravity.BOTTOM or Gravity.END
             setMargins(16, 16, 16, 16)
         })
 
-        // 6. Компас (левый верхний угол) — ТОЛЬКО ОДИН
         compassView = ImageView(this).apply {
             setImageResource(R.drawable.compass)
             elevation = 8f
@@ -323,8 +242,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             gravity = Gravity.TOP or Gravity.START
             setMargins(16, 16, 16, 16)
         })
-
-        Log.d(TAG, "UI initialized: map, loading, status, toggle, location, compass")
     }
 
     private fun createButton(text: String, backgroundColor: Int, onClick: () -> Unit): Button {
@@ -347,10 +264,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         hasMagnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) != null
 
         if (!hasAccelerometer || !hasMagnetometer) {
-            Log.w(TAG, "Компас недоступен: acc=$hasAccelerometer, mag=$hasMagnetometer")
             compassView.visibility = View.GONE
-        } else {
-            Log.d(TAG, "Компас доступен")
         }
     }
 
@@ -374,7 +288,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             myLocationOverlay?.enableMyLocation()
             myLocationOverlay?.enableFollowLocation()
             mapView.overlays.add(myLocationOverlay)
-            Log.d(TAG, "MyLocation overlay enabled")
         }
     }
 
@@ -395,10 +308,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             heatmapOverlay.addTower(tower)
         }
         mapView.controller.setCenter(currentCenter)
-        Log.d(TAG, "Loaded ${mockTowers.size} cell towers")
     }
-
-    // === Map Type Toggle ===
 
     private fun toggleMapType() {
         if (!isNetworkAvailable()) {
@@ -424,7 +334,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun tryLoadSatelliteSource() {
         if (currentSatelliteIndex >= satelliteSources.size) {
-            Log.e(TAG, "Все ${satelliteSources.size} источников недоступны")
             Toast.makeText(this, "Не удалось загрузить спутниковую карту", Toast.LENGTH_LONG).show()
             isSatellite = false
             mapView.setTileSource(TileSourceFactory.MAPNIK)
@@ -444,7 +353,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         
         tileLoadTimeout = Runnable {
             if (isSatellite && isTileLoading) {
-                Log.w(TAG, "Таймаут ${timeout}ms для ${source.name()}, пробуем следующий")
+                Log.w(TAG, "Таймаут для ${source.name()}")
                 isTileLoading = false
                 isFirstTileLoad = false
                 currentSatelliteIndex++
@@ -457,7 +366,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun cancelTileLoadTimeout() {
         tileLoadTimeout?.let { 
             tileLoadHandler.removeCallbacks(it)
-            Log.d(TAG, "Tile load timeout cancelled")
         }
         tileLoadTimeout = null
         isTileLoading = false
@@ -467,7 +375,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         loadingIndicator.visibility = View.VISIBLE
         statusText.visibility = View.VISIBLE
         statusText.text = message
-        Log.d(TAG, "Loading: $message")
     }
 
     private fun hideLoading() {
@@ -476,8 +383,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         cancelTileLoadTimeout()
     }
 
-    // === Location ===
-
     private fun requestLocationPermission() {
         when {
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
@@ -485,14 +390,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 isLocationPermissionGranted = true
                 enableMyLocationOverlay()
                 startLocationUpdates()
-            }
-            ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION) -> {
-                Toast.makeText(this, "Разрешите геолокацию", Toast.LENGTH_LONG).show()
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                    LOCATION_PERMISSION_REQUEST
-                )
             }
             else -> {
                 ActivityCompat.requestPermissions(
@@ -505,10 +402,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun startLocationUpdates() {
-        if (!isLocationPermissionGranted) {
-            Log.w(TAG, "Location permission not granted")
-            return
-        }
+        if (!isLocationPermissionGranted) return
 
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
@@ -516,7 +410,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     LocationManager.GPS_PROVIDER,
                     3000L, 10f, locationListener
                 )
-                Log.d(TAG, "GPS updates started")
             }
 
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
@@ -524,10 +417,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     LocationManager.NETWORK_PROVIDER,
                     5000L, 50f, locationListener
                 )
-                Log.d(TAG, "Network updates started")
             }
         } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException", e)
             Toast.makeText(this, "Ошибка доступа к геолокации", Toast.LENGTH_LONG).show()
         }
     }
@@ -535,18 +426,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun stopLocationUpdates() {
         try {
             locationManager.removeUpdates(locationListener)
-            Log.d(TAG, "Location updates stopped")
         } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException", e)
+            Log.e(TAG, "Error stopping location", e)
         }
     }
 
     private inner class LocationUpdateListener : LocationListener {
         override fun onLocationChanged(location: Location) {
             myLocation = GeoPoint(location.latitude, location.longitude)
-            Log.d(TAG, "Location: ${location.latitude}, ${location.longitude}")
         }
-
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
         override fun onProviderDisabled(provider: String) {}
@@ -577,8 +465,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
         }
     }
-
-    // === Compass ===
 
     override fun onSensorChanged(event: SensorEvent?) {
         when (event?.sensor?.type) {
@@ -617,11 +503,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        if (sensor?.type == Sensor.TYPE_MAGNETIC_FIELD && accuracy == SensorManager.SENSOR_STATUS_UNRELIABLE) {
-            Log.w(TAG, "Magnetometer unreliable")
-        }
-    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun rotateCompass(azimuth: Float) {
         val rotateAnimation = RotateAnimation(
@@ -637,8 +519,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         currentAzimuth = -azimuth
     }
 
-    // === Lifecycle ===
-
     override fun onResume() {
         super.onResume()
         mapView.onResume()
@@ -650,7 +530,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             if (accelerometer != null && magnetometer != null) {
                 sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
                 sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_GAME)
-                Log.d(TAG, "Compass registered with SENSOR_DELAY_GAME (20ms)")
             }
         }
     }
@@ -668,10 +547,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
         stopLocationUpdates()
         cancelTileLoadTimeout()
-        Log.d(TAG, "Destroyed")
     }
-
-    // === Utilities ===
 
     private fun isNetworkAvailable(): Boolean {
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -696,8 +572,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         dbm >= -110 -> "Слабый сигнал. Только текст."
         else -> "Очень слабый сигнал."
     }
-
-    // === Heatmap Overlay ===
 
     private class CoverageHeatmapOverlay : Overlay() {
         private val towers = mutableListOf<CellTower>()
