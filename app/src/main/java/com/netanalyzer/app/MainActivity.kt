@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
+import android.graphics.drawable.GradientDrawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -18,7 +19,9 @@ import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.Animation
 import android.view.animation.RotateAnimation
 import android.widget.Button
@@ -43,6 +46,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var btnToggleMap: Button
     private lateinit var btnMyLocation: Button
     private lateinit var compassView: ImageView
+    private lateinit var mapContainer: FrameLayout
     
     private var isSatellite = false
     private var currentSatelliteIndex = 0
@@ -77,7 +81,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             "© Google"
         ),
         XYTileSource(
-            "CartoDB Satellite",
+            "CartoDB Voyager",
             1, 19, 256, ".png",
             arrayOf("https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"),
             "© CartoDB"
@@ -120,16 +124,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         Configuration.getInstance().osmdroidTileCache = java.io.File(cacheDir, "osmdroid/tiles")
         Configuration.getInstance().load(this, prefs)
 
-        // Инициализация UI
+        // Получаем контейнер
+        mapContainer = findViewById(R.id.mapContainer)
+
+        // Создаём карту
         mapView = MapView(this)
-        findViewById<FrameLayout>(R.id.mapContainer).addView(mapView)
+        val mapParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        mapContainer.addView(mapView, 0, mapParams) // Добавляем ПЕРВЫМ (индекс 0)
 
-        btnToggleMap = findViewById(R.id.btnToggleMap)
-        btnMyLocation = findViewById(R.id.btnMyLocation)
-        compassView = findViewById(R.id.compassView)
-
-        btnToggleMap.setOnClickListener { toggleMapType() }
-        btnMyLocation.setOnClickListener { goToMyLocation() }
+        // Создаём кнопки программно (будут поверх карты)
+        createButtons()
+        
+        // Создаём компас
+        createCompass()
 
         // Инициализация сенсоров
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -137,6 +147,58 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         setupMap()
         loadCoverageData()
         setupLocationTracking()
+    }
+
+    private fun createButtons() {
+        // Кнопка переключения карты
+        btnToggleMap = Button(this).apply {
+            text = " Спутник"
+            setBackgroundColor(Color.parseColor("#2196F3"))
+            setTextColor(Color.WHITE)
+            elevation = 16f
+            setPadding(32, 16, 32, 16)
+            textSize = 16f
+            setOnClickListener { toggleMapType() }
+        }
+        val btnToggleParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            setMargins(16, 16, 16, 16)
+        }
+        mapContainer.addView(btnToggleMap, btnToggleParams)
+
+        // Кнопка моего местоположения
+        btnMyLocation = Button(this).apply {
+            text = "📍"
+            setBackgroundColor(Color.parseColor("#4CAF50"))
+            setTextColor(Color.WHITE)
+            elevation = 16f
+            textSize = 24f
+            setOnClickListener { goToMyLocation() }
+        }
+        val btnLocParams = FrameLayout.LayoutParams(
+            140, 140
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.END
+            setMargins(16, 16, 16, 16)
+        }
+        mapContainer.addView(btnMyLocation, btnLocParams)
+    }
+
+    private fun createCompass() {
+        compassView = ImageView(this)
+        compassView.setImageResource(R.drawable.compass)
+        compassView.elevation = 16f
+        
+        val compassParams = FrameLayout.LayoutParams(
+            160, 160
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            setMargins(16, 16, 16, 16)
+        }
+        mapContainer.addView(compassView, compassParams)
     }
 
     private fun setupMap() {
@@ -159,7 +221,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (isSatellite) {
             currentSatelliteIndex = 0
             loadSatelliteSource()
-            btnToggleMap.text = "🗺 Схема"
+            btnToggleMap.text = " Схема"
         } else {
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
@@ -181,16 +243,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             isSatellite = false
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
-        }
-    }
-
-    private fun tryNextSatelliteSource() {
-        currentSatelliteIndex++
-        if (currentSatelliteIndex < satelliteSources.size) {
-            loadSatelliteSource()
-            mapView.invalidate()
-        } else {
-            Toast.makeText(this, "Не удалось загрузить спутник", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -297,7 +349,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onResume() {
         super.onResume()
         mapView.onResume()
-        // Регистрация сенсора компаса
         val orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
         if (orientationSensor != null) {
             sensorManager.registerListener(this, orientationSensor, SensorManager.SENSOR_DELAY_UI)
@@ -317,7 +368,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    // Оверлей для зон покрытия
     private class CoverageHeatmapOverlay : Overlay() {
         private val towers = mutableListOf<CellTower>()
         private val paint = Paint()
