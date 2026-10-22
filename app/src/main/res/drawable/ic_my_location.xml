@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    
+    <!-- Внешний круг -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,2C8.13,2 5,5.13 5,9c0,5.25 7,13 7,13s7,-7.75 7,-13c0,-3.87 -3.13,-7 -7,-7z" />
+    
+    <!-- Внутренняя точка -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M12,11.5c-1.38,0 -2.5,-1.12 -2.5,-2.5s1.12,-2.5 2.5,-2.5 2.5,1.12 2.5,2.5 -1.12,2.5 -2.5,2.5z" />
+    
+    <!-- Кольцо вокруг точки -->
+    <path
+        android:fillColor="none"
+        android:strokeColor="#4CAF50"
+        android:strokeWidth="1.5"
+        android:pathData="M12,7c-2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4 -1.79,-4 -4,-4z" />
+</vector>
