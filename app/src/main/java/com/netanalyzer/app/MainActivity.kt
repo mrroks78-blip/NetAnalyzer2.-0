@@ -8,7 +8,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
-import android.graphics.drawable.GradientDrawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -19,6 +18,8 @@ import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +28,8 @@ import android.view.animation.RotateAnimation
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -37,6 +40,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
@@ -47,6 +51,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var btnMyLocation: Button
     private lateinit var compassView: ImageView
     private lateinit var mapContainer: FrameLayout
+    private lateinit var loadingIndicator: ProgressBar
+    private lateinit var statusText: TextView
     
     private var isSatellite = false
     private var currentSatelliteIndex = 0
@@ -55,8 +61,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var currentCenter = GeoPoint(55.751244, 37.618423)
     private var currentAzimuth = 0f
     private var myLocation: GeoPoint? = null
+    private var myLocationOverlay: MyLocationNewOverlay? = null
+    
+    // Для сглаживания компаса
+    private var smoothedAzimuth = 0f
+    private val azimuthHistory = mutableListOf<Float>()
+    private val AZIMUTH_SMOOTHING_WINDOW = 5
+    
+    // Для автоматического fallback
+    private val tileLoadHandler = Handler(Looper.getMainLooper())
+    private var tileLoadTimeout: Runnable? = null
 
-    // 5 источников спутниковых карт (fallback)
+    // 5 источников спутниковых карт
     private val satelliteSources = listOf(
         XYTileSource(
             "ESRI World Imagery",
@@ -124,22 +140,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         Configuration.getInstance().osmdroidTileCache = java.io.File(cacheDir, "osmdroid/tiles")
         Configuration.getInstance().load(this, prefs)
 
-        // Получаем контейнер
         mapContainer = findViewById(R.id.mapContainer)
 
-        // Создаём карту
+        // Создаём карту ПЕРВОЙ (индекс 0)
         mapView = MapView(this)
         val mapParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-        mapContainer.addView(mapView, 0, mapParams) // Добавляем ПЕРВЫМ (индекс 0)
+        mapContainer.addView(mapView, 0, mapParams)
 
-        // Создаём кнопки программно (будут поверх карты)
-        createButtons()
-        
-        // Создаём компас
-        createCompass()
+        // Создаём UI элементы ПОВЕРХ карты
+        createUIElements()
 
         // Инициализация сенсоров
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -149,10 +161,37 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         setupLocationTracking()
     }
 
-    private fun createButtons() {
+    private fun createUIElements() {
+        // Индикатор загрузки
+        loadingIndicator = ProgressBar(this).apply {
+            visibility = View.GONE
+            setBackgroundColor(Color.argb(180, 0, 0, 0))
+        }
+        val loadingParams = FrameLayout.LayoutParams(
+            200, 200, Gravity.CENTER
+        )
+        mapContainer.addView(loadingIndicator, loadingParams)
+
+        // Текст статуса
+        statusText = TextView(this).apply {
+            visibility = View.GONE
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setBackgroundColor(Color.argb(180, 0, 0, 0))
+            setPadding(16, 8, 16, 8)
+        }
+        val statusParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.CENTER
+            setMargins(0, 120, 0, 0)
+        }
+        mapContainer.addView(statusText, statusParams)
+
         // Кнопка переключения карты
         btnToggleMap = Button(this).apply {
-            text = " Спутник"
+            text = "🛰 Спутник"
             setBackgroundColor(Color.parseColor("#2196F3"))
             setTextColor(Color.WHITE)
             elevation = 16f
@@ -185,13 +224,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         }
         mapContainer.addView(btnMyLocation, btnLocParams)
-    }
 
-    private fun createCompass() {
+        // Компас
         compassView = ImageView(this)
         compassView.setImageResource(R.drawable.compass)
         compassView.elevation = 16f
-        
         val compassParams = FrameLayout.LayoutParams(
             160, 160
         ).apply {
@@ -208,6 +245,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapView.controller.setZoom(currentZoom)
         mapView.controller.setCenter(currentCenter)
         mapView.overlays.add(heatmapOverlay)
+
+        // Оверлей моего местоположения
+        myLocationOverlay = MyLocationNewOverlay(mapView)
+        myLocationOverlay?.enableMyLocation()
+        mapView.overlays.add(myLocationOverlay)
     }
 
     private fun toggleMapType() {
@@ -220,30 +262,56 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         if (isSatellite) {
             currentSatelliteIndex = 0
-            loadSatelliteSource()
-            btnToggleMap.text = " Схема"
+            loadSatelliteSourceWithFallback()
+            btnToggleMap.text = "🗺 Схема"
         } else {
+            cancelTileLoadTimeout()
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
+            hideLoading()
         }
 
         mapView.invalidate()
     }
 
-    private fun loadSatelliteSource() {
-        if (currentSatelliteIndex < satelliteSources.size) {
-            mapView.setTileSource(satelliteSources[currentSatelliteIndex])
-            Toast.makeText(
-                this,
-                "Источник: ${satelliteSources[currentSatelliteIndex].name()}",
-                Toast.LENGTH_SHORT
-            ).show()
-        } else {
+    private fun loadSatelliteSourceWithFallback() {
+        if (currentSatelliteIndex >= satelliteSources.size) {
             Toast.makeText(this, "Все источники недоступны", Toast.LENGTH_LONG).show()
             isSatellite = false
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "🛰 Спутник"
+            hideLoading()
+            return
         }
+
+        showLoading("Загрузка: ${satelliteSources[currentSatelliteIndex].name()}")
+        mapView.setTileSource(satelliteSources[currentSatelliteIndex])
+
+        // Таймаут для автоматического fallback
+        tileLoadTimeout = Runnable {
+            if (isSatellite) {
+                currentSatelliteIndex++
+                loadSatelliteSourceWithFallback()
+            }
+        }
+        tileLoadHandler.postDelayed(tileLoadTimeout!!, 8000) // 8 секунд на загрузку
+    }
+
+    private fun cancelTileLoadTimeout() {
+        tileLoadTimeout?.let { tileLoadHandler.removeCallbacks(it) }
+        tileLoadTimeout = null
+    }
+
+    private fun showLoading(message: String) {
+        loadingIndicator.visibility = View.VISIBLE
+        statusText.visibility = View.VISIBLE
+        statusText.text = message
+    }
+
+    private fun hideLoading() {
+        loadingIndicator.visibility = View.GONE
+        statusText.visibility = View.GONE
+        cancelTileLoadTimeout()
     }
 
     private fun goToMyLocation() {
@@ -302,32 +370,81 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 101)
+            ActivityCompat.requestPermissions(this, arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ), 101)
             return
         }
         
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000L, 10f, object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                myLocation = GeoPoint(location.latitude, location.longitude)
-            }
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-            override fun onProviderEnabled(provider: String) {}
-            override fun onProviderDisabled(provider: String) {}
-        })
+        try {
+            // GPS для точности
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER, 3000L, 10f, locationListener
+            )
+            // Network для работы в помещении
+            locationManager.requestLocationUpdates(
+                LocationManager.NETWORK_PROVIDER, 5000L, 50f, locationListener
+            )
+        } catch (e: SecurityException) {
+            Toast.makeText(this, "Нет доступа к геолокации", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            myLocation = GeoPoint(location.latitude, location.longitude)
+        }
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            setupLocationTracking()
+        if (requestCode == 101) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                setupLocationTracking()
+            } else {
+                Toast.makeText(this, "Геолокация отключена — некоторые функции недоступны", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
-    // === КОМПАС ===
+    // === КОМПАС (через Accelerometer + Magnetometer) ===
+    private val rotationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
+    private var accelerometerValues: FloatArray? = null
+    private var magnetometerValues: FloatArray? = null
+
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event?.sensor?.type == Sensor.TYPE_ORIENTATION) {
-            val azimuth = event.values[0]
-            rotateCompass(azimuth)
+        when (event?.sensor?.type) {
+            Sensor.TYPE_ACCELEROMETER -> {
+                accelerometerValues = event.values.clone()
+                updateCompass()
+            }
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                magnetometerValues = event.values.clone()
+                updateCompass()
+            }
+        }
+    }
+
+    private fun updateCompass() {
+        if (accelerometerValues != null && magnetometerValues != null) {
+            SensorManager.getRotationMatrix(rotationMatrix, null, accelerometerValues, magnetometerValues)
+            SensorManager.getOrientation(rotationMatrix, orientationAngles)
+            
+            val azimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
+            
+            // Сглаживание
+            azimuthHistory.add(azimuth)
+            if (azimuthHistory.size > AZIMUTH_SMOOTHING_WINDOW) {
+                azimuthHistory.removeAt(0)
+            }
+            smoothedAzimuth = azimuthHistory.average().toFloat()
+            
+            rotateCompass(smoothedAzimuth)
         }
     }
 
@@ -349,9 +466,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onResume() {
         super.onResume()
         mapView.onResume()
-        val orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
-        if (orientationSensor != null) {
-            sensorManager.registerListener(this, orientationSensor, SensorManager.SENSOR_DELAY_UI)
+        
+        // Регистрация сенсоров компаса
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        
+        if (accelerometer != null && magnetometer != null) {
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
+            sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_UI)
+        } else {
+            Toast.makeText(this, "Компас недоступен на этом устройстве", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -359,6 +483,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
         mapView.onPause()
         sensorManager.unregisterListener(this)
+        cancelTileLoadTimeout()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mapView.onDetach()
+        sensorManager.unregisterListener(this)
+        cancelTileLoadTimeout()
     }
 
     private fun isNetworkAvailable(): Boolean {
