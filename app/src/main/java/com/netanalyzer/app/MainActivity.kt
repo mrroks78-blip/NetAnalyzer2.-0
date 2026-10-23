@@ -2,11 +2,7 @@ package com.netanalyzer.app
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
@@ -22,7 +18,6 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,18 +35,15 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
-import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
-import org.osmdroid.views.util.CacheManager
 import java.io.File
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
@@ -62,15 +54,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         private const val FIRST_TILE_TIMEOUT_MS = 25000L
         private const val SUBSEQUENT_TILE_TIMEOUT_MS = 10000L
         private const val COMPASS_SMOOTHING_WINDOW = 8
-        private const val NOTIFICATION_CHANNEL_ID = "cache_channel"
-        private const val NOTIFICATION_ID = 1001
     }
 
     private lateinit var mapView: MapView
     private lateinit var mapContainer: FrameLayout
     private lateinit var btnToggleMap: Button
     private lateinit var btnMyLocation: Button
-    private lateinit var btnCacheMap: Button
     private lateinit var compassView: ImageView
     private lateinit var loadingIndicator: ProgressBar
     private lateinit var statusText: TextView
@@ -104,7 +93,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private val heatmapOverlay = CoverageHeatmapOverlay()
     private val locationListener = LocationUpdateListener()
-    private var cacheManager: CacheManager? = null
 
     private val satelliteSources = listOf(
         XYTileSource(
@@ -176,7 +164,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        createNotificationChannel()
         initializeOSMDroid()
         initializeUI()
         initializeServices()
@@ -185,20 +172,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         requestLocationPermission()
 
         Log.d(TAG, "Activity created with ${satelliteSources.size} satellite sources")
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "Кэширование карт",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Уведомления о процессе кэширования карт"
-            }
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-        }
     }
 
     private fun initializeOSMDroid() {
@@ -276,15 +249,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        btnCacheMap = createButton("Кэш", Color.parseColor("#FF9800")) { showCacheDialog() }
-        mapContainer.addView(btnCacheMap, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            setMargins(16, 16, 16, 16)
-        })
-
         compassView = ImageView(this).apply {
             setImageResource(R.drawable.compass)
             elevation = 8f
@@ -305,116 +269,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             textSize = 14f
             setOnClickListener { onClick() }
         }
-    }
-
-    private fun showCacheDialog() {
-        if (!isNetworkAvailable()) {
-            Toast.makeText(this, "Нет интернета — кэширование невозможно", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        val message = """
-            Кэширование карты текущего экрана
-            
-            Приложение скачает все тайлы видимой области на зумах 13-16.
-            Это займёт 2-10 минут в зависимости от скорости интернета.
-            
-            После завершения карта будет работать без интернета.
-        """.trimIndent()
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Кэшировать карту?")
-            .setMessage(message)
-            .setPositiveButton("Начать") { _, _ -> startCaching() }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    private fun startCaching() {
-        val boundingBox: BoundingBox = mapView.boundingBox
-        val zoomMin = 13
-        val zoomMax = 16
-
-        cacheManager = CacheManager(mapView)
-
-        val totalTiles = cacheManager?.possibleTilesInArea(boundingBox, zoomMin, zoomMax) ?: 0
-
-        if (totalTiles == 0) {
-            Toast.makeText(this, "Нет тайлов для кэширования", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        showLoading("Кэширование: 0/$totalTiles")
-
-        val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Кэширование карты")
-            .setContentText("Загрузка тайлов: 0/$totalTiles")
-            .setProgress(totalTiles, 0, false)
-            .setOngoing(true)
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
-
-        cacheManager?.downloadAreaAsync(
-            this,
-            boundingBox,
-            zoomMin,
-            zoomMax,
-            object : CacheManager.CacheManagerCallback {
-                override fun onTaskComplete() {
-                    Log.d(TAG, "Кэширование завершено")
-                    hideLoading()
-                    notificationManager.cancel(NOTIFICATION_ID)
-
-                    val intent = Intent(this@MainActivity, MainActivity::class.java)
-                    val pendingIntent = PendingIntent.getActivity(
-                        this@MainActivity, 0, intent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-
-                    val doneNotification = NotificationCompat.Builder(this@MainActivity, NOTIFICATION_CHANNEL_ID)
-                        .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                        .setContentTitle("Кэширование завершено")
-                        .setContentText("Карта готова к работе офлайн")
-                        .setContentIntent(pendingIntent)
-                        .setAutoCancel(true)
-                        .build()
-
-                    notificationManager.notify(NOTIFICATION_ID + 1, doneNotification)
-
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity, "Карта закэширована!", Toast.LENGTH_LONG).show()
-                    }
-                }
-
-                override fun onTaskFailed(errors: Int) {
-                    Log.e(TAG, "Кэширование завершено с ошибками: $errors")
-                    hideLoading()
-                    notificationManager.cancel(NOTIFICATION_ID)
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity, "Ошибок при кэшировании: $errors", Toast.LENGTH_LONG).show()
-                    }
-                }
-
-                override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax: Int) {
-                    runOnUiThread {
-                        statusText.text = "Кэш: $progress тайлов (зум $currentZoomLevel)"
-                    }
-                    notificationBuilder.setContentText("Загрузка: $progress тайлов")
-                    notificationBuilder.setProgress(totalTiles, progress, false)
-                    notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
-                }
-
-                override fun downloadStarted() {
-                    Log.d(TAG, "Кэширование началось")
-                }
-
-                override fun setPossibleTilesInArea(total: Int) {
-                    Log.d(TAG, "Всего тайлов для кэширования: $total")
-                }
-            }
-        )
     }
 
     private fun initializeServices() {
@@ -473,7 +327,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun toggleMapType() {
         if (!isNetworkAvailable()) {
-            Toast.makeText(this, "Нет интернета. Используйте кэш.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Нет интернета", Toast.LENGTH_LONG).show()
             return
         }
 
@@ -709,7 +563,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
         stopLocationUpdates()
         cancelTileLoadTimeout()
-        cacheManager?.cancelTask()
         Log.d(TAG, "Destroyed")
     }
 
