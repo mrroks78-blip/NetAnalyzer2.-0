@@ -2,6 +2,9 @@ package com.netanalyzer.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -19,7 +22,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -27,7 +30,6 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.Animation
 import android.view.animation.RotateAnimation
 import android.widget.Button
 import android.widget.FrameLayout
@@ -37,15 +39,18 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.util.BoundingBoxE6
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
+import org.osmdroid.views.util.CacheManager
 import java.io.File
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
@@ -56,14 +61,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         private const val FIRST_TILE_TIMEOUT_MS = 25000L
         private const val SUBSEQUENT_TILE_TIMEOUT_MS = 10000L
         private const val COMPASS_SMOOTHING_WINDOW = 8
-        private const val OFFLINE_MAPS_URL = "https://download.geofabrik.de/russia-latest.osm.pbf"
+        private const val NOTIFICATION_CHANNEL_ID = "cache_channel"
+        private const val NOTIFICATION_ID = 1001
     }
 
     private lateinit var mapView: MapView
     private lateinit var mapContainer: FrameLayout
     private lateinit var btnToggleMap: Button
     private lateinit var btnMyLocation: Button
-    private lateinit var btnOfflineMaps: Button
+    private lateinit var btnCacheMap: Button
     private lateinit var compassView: ImageView
     private lateinit var loadingIndicator: ProgressBar
     private lateinit var statusText: TextView
@@ -97,14 +103,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private val heatmapOverlay = CoverageHeatmapOverlay()
     private val locationListener = LocationUpdateListener()
+    private var cacheManager: CacheManager? = null
 
     private val satelliteSources = listOf(
         XYTileSource(
             "Космоснимки",
             1, 18, 256, ".jpg",
-            arrayOf(
-                "https://tiles.kosmosnimki.ru/TileService.ashx?ProjectName=Map&LayerName=Satellite&TileMatrixSet=GoogleMapsCompatible&TileMatrix={z}&TileCol={x}&TileRow={y}"
-            ),
+            arrayOf("https://tiles.kosmosnimki.ru/TileService.ashx?ProjectName=Map&LayerName=Satellite&TileMatrixSet=GoogleMapsCompatible&TileMatrix={z}&TileCol={x}&TileRow={y}"),
             "© Роскосмос"
         ),
         XYTileSource(
@@ -119,17 +124,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         XYTileSource(
             "2GIS Satellite",
             1, 19, 256, ".png",
-            arrayOf(
-                "https://tiles01.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
-            ),
+            arrayOf("https://tiles01.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"),
             "© 2GIS"
         ),
         XYTileSource(
             "ESRI World Imagery",
             1, 19, 256, ".jpg",
-            arrayOf(
-                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            ),
+            arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"),
             "© Esri"
         ),
         XYTileSource(
@@ -144,25 +145,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         XYTileSource(
             "OpenTopoMap",
             1, 17, 256, ".png",
-            arrayOf(
-                "https://a.tile.opentopomap.org/{z}/{x}/{y}.png"
-            ),
+            arrayOf("https://a.tile.opentopomap.org/{z}/{x}/{y}.png"),
             "© OpenTopoMap"
         ),
         XYTileSource(
             "CartoDB Voyager",
             1, 19, 256, ".png",
-            arrayOf(
-                "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-            ),
+            arrayOf("https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"),
             "© CartoDB"
         ),
         XYTileSource(
             "Wikimedia Maps",
             1, 18, 256, ".png",
-            arrayOf(
-                "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"
-            ),
+            arrayOf("https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"),
             "© Wikimedia"
         )
     )
@@ -186,32 +181,46 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        createNotificationChannel()
         initializeOSMDroid()
         initializeUI()
         initializeServices()
         setupMap()
         loadCoverageData()
         requestLocationPermission()
-        
+
         Log.d(TAG, "Activity created with ${satelliteSources.size} satellite sources")
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Кэширование карт",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Уведомления о процессе кэширования карт"
+            }
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
     }
 
     private fun initializeOSMDroid() {
         val prefs = getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
         Configuration.getInstance().userAgentValue = "NetAnalyzer/1.0"
-        
-        // ИСПРАВЛЕНО: Используем getExternalFilesDir для гарантии работы на Android 11+ (Scoped Storage)
+
         val osmdroidBaseDir = File(getExternalFilesDir(null), "osmdroid")
         val osmdroidTileDir = File(osmdroidBaseDir, "tiles")
-        
+
         if (!osmdroidTileDir.exists()) {
-            osmdroidTileDir.mkdirs() // Создаем папки, если их нет
+            osmdroidTileDir.mkdirs()
         }
-        
+
         Configuration.getInstance().osmdroidBasePath = osmdroidBaseDir
         Configuration.getInstance().osmdroidTileCache = osmdroidTileDir
         Configuration.getInstance().load(this, prefs)
-        
+
         checkOfflineMaps()
     }
 
@@ -219,12 +228,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val tileCache = Configuration.getInstance().osmdroidTileCache
         val files = tileCache.listFiles()
         if (files != null && files.isNotEmpty()) {
-            Log.d(TAG, "Найдено офлайн-файлов: ${files.size}. OSMDroid подключит их автоматически.")
+            Log.d(TAG, "Найдено офлайн-файлов: ${files.size}")
         } else {
-            Log.d(TAG, "Офлайн карты не найдены. Будет использоваться только онлайн-кэш.")
+            Log.d(TAG, "Офлайн карты не найдены")
         }
     }
-    
+
     @SuppressLint("ClickableViewAccessibility")
     private fun initializeUI() {
         mapContainer = findViewById(R.id.mapContainer)
@@ -272,8 +281,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        btnOfflineMaps = createButton("Офлайн", Color.parseColor("#FF9800")) { showOfflineMapsDialog() }
-        mapContainer.addView(btnOfflineMaps, FrameLayout.LayoutParams(
+        btnCacheMap = createButton("Кэш", Color.parseColor("#FF9800")) { showCacheDialog() }
+        mapContainer.addView(btnCacheMap, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
@@ -303,25 +312,114 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    private fun showOfflineMapsDialog() {
+    private fun showCacheDialog() {
+        if (!isNetworkAvailable()) {
+            Toast.makeText(this, "Нет интернета — кэширование невозможно", Toast.LENGTH_LONG).show()
+            return
+        }
+
         val message = """
-            Для работы без интернета:
+            Кэширование карты текущего экрана
             
-            1. (Простой способ) Откройте приложение с Wi-Fi и просто покрутите карту нужного района. Она сохранится в кэш автоматически.
+            Приложение скачает все тайлы видимой области на зумах 13-16.
+            Это займёт 2-10 минут в зависимости от скорости интернета.
             
-            2. (Продвинутый способ) Скачайте архив карт в формате .zip или .mbtiles (например, через программу Mobile Atlas Creator на ПК).
-            
-            3. Поместите этот файл в папку телефона:
-            Android/data/com.netanalyzer.app/files/osmdroid/tiles/
-            
-            Приложение подключит его автоматически при следующем запуске.
+            После завершения карта будет работать без интернета.
         """.trimIndent()
-        
+
         android.app.AlertDialog.Builder(this)
-            .setTitle("Офлайн карты")
+            .setTitle("Кэшировать карту?")
             .setMessage(message)
-            .setPositiveButton("Понятно", null)
+            .setPositiveButton("Начать") { _, _ -> startCaching() }
+            .setNegativeButton("Отмена", null)
             .show()
+    }
+
+    private fun startCaching() {
+        val boundingBox = mapView.boundingBox
+        val zoomMin = 13
+        val zoomMax = 16
+
+        cacheManager = CacheManager(mapView)
+
+        val totalTiles = cacheManager?.possibleTilesInArea(boundingBox, zoomMin, zoomMax) ?: 0
+
+        if (totalTiles == 0) {
+            Toast.makeText(this, "Нет тайлов для кэширования", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        showLoading("Кэширование: 0/$totalTiles")
+
+        val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("Кэширование карты")
+            .setContentText("Загрузка тайлов: 0/$totalTiles")
+            .setProgress(totalTiles, 0, false)
+            .setOngoing(true)
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
+
+        cacheManager?.downloadAreaAsync(
+            this,
+            boundingBox,
+            zoomMin,
+            zoomMax,
+            object : CacheManager.CacheManagerCallback {
+                override fun onTaskComplete() {
+                    Log.d(TAG, "Кэширование завершено")
+                    hideLoading()
+                    notificationManager.cancel(NOTIFICATION_ID)
+
+                    val intent = Intent(this@MainActivity, MainActivity::class.java)
+                    val pendingIntent = PendingIntent.getActivity(
+                        this@MainActivity, 0, intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+
+                    val doneNotification = NotificationCompat.Builder(this@MainActivity, NOTIFICATION_CHANNEL_ID)
+                        .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                        .setContentTitle("Кэширование завершено")
+                        .setContentText("Карта готова к работе офлайн")
+                        .setContentIntent(pendingIntent)
+                        .setAutoCancel(true)
+                        .build()
+
+                    notificationManager.notify(NOTIFICATION_ID + 1, doneNotification)
+
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Карта закэширована!", Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                override fun onTaskFailed(errors: Int) {
+                    Log.e(TAG, "Кэширование завершено с ошибками: $errors")
+                    hideLoading()
+                    notificationManager.cancel(NOTIFICATION_ID)
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Ошибок при кэшировании: $errors", Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax: Int) {
+                    runOnUiThread {
+                        statusText.text = "Кэш: $progress тайлов (зум $currentZoomLevel)"
+                    }
+                    notificationBuilder.setContentText("Загрузка: $progress тайлов")
+                    notificationBuilder.setProgress(totalTiles, progress, false)
+                    notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
+                }
+
+                override fun downloadStarted() {
+                    Log.d(TAG, "Кэширование началось")
+                }
+
+                override fun setPossibleTilesInArea(total: Int) {
+                    Log.d(TAG, "Всего тайлов для кэширования: $total")
+                }
+            }
+        )
     }
 
     private fun initializeServices() {
@@ -350,7 +448,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun enableMyLocationOverlay() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             == PackageManager.PERMISSION_GRANTED) {
             myLocationOverlay = MyLocationNewOverlay(mapView)
             myLocationOverlay?.enableMyLocation()
@@ -362,7 +460,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun loadCoverageData() {
         for (tower in mockTowers) {
             val geoPoint = GeoPoint(tower.latitude, tower.longitude)
-            
+
             val marker = Marker(mapView).apply {
                 position = geoPoint
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
@@ -380,8 +478,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun toggleMapType() {
         if (!isNetworkAvailable()) {
-            Toast.makeText(this, "Нет интернета. Используйте офлайн карты.", Toast.LENGTH_LONG).show()
-            showOfflineMapsDialog()
+            Toast.makeText(this, "Нет интернета. Используйте кэш.", Toast.LENGTH_LONG).show()
             return
         }
 
@@ -409,19 +506,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapView.setTileSource(TileSourceFactory.MAPNIK)
             btnToggleMap.text = "Спутник"
             hideLoading()
-            showOfflineMapsDialog()
             return
         }
 
         val source = satelliteSources[currentSatelliteIndex]
         Log.d(TAG, "Пробуем источник #$currentSatelliteIndex: ${source.name()}")
-        
+
         showLoading("Загрузка: ${source.name()}")
         mapView.setTileSource(source)
         isTileLoading = true
 
         val timeout = if (isFirstTileLoad) FIRST_TILE_TIMEOUT_MS else SUBSEQUENT_TILE_TIMEOUT_MS
-        
+
         tileLoadTimeout = Runnable {
             if (isSatellite && isTileLoading) {
                 Log.w(TAG, "Таймаут для ${source.name()}")
@@ -435,7 +531,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun cancelTileLoadTimeout() {
-        tileLoadTimeout?.let { 
+        tileLoadTimeout?.let {
             tileLoadHandler.removeCallbacks(it)
         }
         tileLoadTimeout = null
@@ -456,7 +552,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun requestLocationPermission() {
         when {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED -> {
                 isLocationPermissionGranted = true
                 enableMyLocationOverlay()
@@ -556,19 +652,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             if (success) {
                 SensorManager.getOrientation(rotationMatrix, orientationAngles)
                 val azimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
-                
+
                 azimuthBuffer[azimuthBufferIndex] = azimuth
                 azimuthBufferIndex = (azimuthBufferIndex + 1) % COMPASS_SMOOTHING_WINDOW
                 if (azimuthBufferCount < COMPASS_SMOOTHING_WINDOW) {
                     azimuthBufferCount++
                 }
-                
+
                 var sum = 0f
                 for (i in 0 until azimuthBufferCount) {
                     sum += azimuthBuffer[i]
                 }
                 val smoothedAzimuth = sum / azimuthBufferCount
-                
+
                 rotateCompass(smoothedAzimuth)
             }
         }
@@ -580,8 +676,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val rotateAnimation = RotateAnimation(
             currentAzimuth,
             -azimuth,
-            Animation.RELATIVE_TO_SELF, 0.5f,
-            Animation.RELATIVE_TO_SELF, 0.5f
+            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
         ).apply {
             duration = 100
             fillAfter = true
@@ -593,11 +689,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onResume() {
         super.onResume()
         mapView.onResume()
-        
+
         if (hasAccelerometer && hasMagnetometer) {
             val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
             val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-            
+
             if (accelerometer != null && magnetometer != null) {
                 sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
                 sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_GAME)
@@ -618,6 +714,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
         stopLocationUpdates()
         cancelTileLoadTimeout()
+        cacheManager?.cancelTask()
         Log.d(TAG, "Destroyed")
     }
 
@@ -657,7 +754,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
             if (shadow) return
-            
+
             for (tower in towers) {
                 val point = mapView.projection.toPixels(
                     GeoPoint(tower.latitude, tower.longitude), null
@@ -665,14 +762,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val x = point.x.toFloat()
                 val y = point.y.toFloat()
                 val radius = 150f
-                
+
                 val color = when {
                     tower.signalStrengthDbm >= -70 -> Color.argb(102, 0, 255, 0)
                     tower.signalStrengthDbm >= -85 -> Color.argb(102, 136, 255, 0)
                     tower.signalStrengthDbm >= -100 -> Color.argb(102, 255, 255, 0)
                     else -> Color.argb(102, 255, 0, 0)
                 }
-                
+
                 val gradient = RadialGradient(x, y, radius, color, Color.TRANSPARENT, Shader.TileMode.CLAMP)
                 paint.shader = gradient
                 canvas.drawCircle(x, y, radius, paint)
