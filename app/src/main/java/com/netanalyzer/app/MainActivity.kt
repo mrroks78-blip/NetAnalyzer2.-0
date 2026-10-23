@@ -199,21 +199,32 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun initializeOSMDroid() {
         val prefs = getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
         Configuration.getInstance().userAgentValue = "NetAnalyzer/1.0"
-        Configuration.getInstance().osmdroidBasePath = File(cacheDir, "osmdroid")
-        Configuration.getInstance().osmdroidTileCache = File(cacheDir, "osmdroid/tiles")
+        
+        // ИСПРАВЛЕНО: Используем getExternalFilesDir для гарантии работы на Android 11+ (Scoped Storage)
+        val osmdroidBaseDir = File(getExternalFilesDir(null), "osmdroid")
+        val osmdroidTileDir = File(osmdroidBaseDir, "tiles")
+        
+        if (!osmdroidTileDir.exists()) {
+            osmdroidTileDir.mkdirs() // Создаем папки, если их нет
+        }
+        
+        Configuration.getInstance().osmdroidBasePath = osmdroidBaseDir
+        Configuration.getInstance().osmdroidTileCache = osmdroidTileDir
         Configuration.getInstance().load(this, prefs)
+        
         checkOfflineMaps()
     }
 
     private fun checkOfflineMaps() {
         val tileCache = Configuration.getInstance().osmdroidTileCache
-        if (tileCache.exists() && tileCache.listFiles()?.isNotEmpty() == true) {
-            Log.d(TAG, "Офлайн карты найдены: ${tileCache.listFiles()?.size} файлов")
+        val files = tileCache.listFiles()
+        if (files != null && files.isNotEmpty()) {
+            Log.d(TAG, "Найдено офлайн-файлов: ${files.size}. OSMDroid подключит их автоматически.")
         } else {
-            Log.d(TAG, "Офлайн карты не найдены")
+            Log.d(TAG, "Офлайн карты не найдены. Будет использоваться только онлайн-кэш.")
         }
     }
-
+    
     @SuppressLint("ClickableViewAccessibility")
     private fun initializeUI() {
         mapContainer = findViewById(R.id.mapContainer)
