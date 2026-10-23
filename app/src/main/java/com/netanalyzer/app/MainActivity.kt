@@ -30,6 +30,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.Animation
 import android.view.animation.RotateAnimation
 import android.widget.Button
 import android.widget.FrameLayout
@@ -44,7 +45,7 @@ import androidx.core.content.ContextCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
-import org.osmdroid.util.BoundingBoxE6
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
@@ -113,18 +114,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             "© Роскосмос"
         ),
         XYTileSource(
-            "Яндекс Спутник",
-            1, 19, 256, ".jpg",
-            arrayOf(
-                "https://sat01.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}",
-                "https://sat02.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}"
-            ),
-            "© Яндекс"
-        ),
-        XYTileSource(
             "2GIS Satellite",
             1, 19, 256, ".png",
-            arrayOf("https://tiles01.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"),
+            arrayOf(
+                "https://tiles01.2gis.com/tiles?x={x}&y={y}&z={z}&v=1",
+                "https://tiles02.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
+            ),
             "© 2GIS"
         ),
         XYTileSource(
@@ -336,7 +331,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun startCaching() {
-        val boundingBox = mapView.boundingBox
+        val boundingBox: BoundingBox = mapView.boundingBox
         val zoomMin = 13
         val zoomMax = 16
 
@@ -676,8 +671,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val rotateAnimation = RotateAnimation(
             currentAzimuth,
             -azimuth,
-            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
-            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
+            Animation.RELATIVE_TO_SELF, 0.5f,
+            Animation.RELATIVE_TO_SELF, 0.5f
         ).apply {
             duration = 100
             fillAfter = true
