@@ -305,26 +305,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun showOfflineMapsDialog() {
         val message = """
-            Офлайн карты не найдены.
+            Для работы без интернета:
             
-            Варианты:
-            1. Подключите интернет для загрузки карт
-            2. Скачайте архив с картами:
-               $OFFLINE_MAPS_URL
-            3. Распакуйте в папку:
-               /sdcard/osmdroid/tiles/
+            1. (Простой способ) Откройте приложение с Wi-Fi и просто покрутите карту нужного района. Она сохранится в кэш автоматически.
             
-            После распаковки перезапустите приложение.
+            2. (Продвинутый способ) Скачайте архив карт в формате .zip или .mbtiles (например, через программу Mobile Atlas Creator на ПК).
+            
+            3. Поместите этот файл в папку телефона:
+            Android/data/com.netanalyzer.app/files/osmdroid/tiles/
+            
+            Приложение подключит его автоматически при следующем запуске.
         """.trimIndent()
         
         android.app.AlertDialog.Builder(this)
             .setTitle("Офлайн карты")
             .setMessage(message)
-            .setPositiveButton("Скачать карты") { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(OFFLINE_MAPS_URL))
-                startActivity(intent)
-            }
-            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Понятно", null)
             .show()
     }
 
