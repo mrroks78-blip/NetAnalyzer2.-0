@@ -399,16 +399,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // ИСПРАВЛЕНИЕ: Явная проверка без let, bands.size (не size())
-    // ═══════════════════════════════════════════════════════════
-
     @SuppressLint("NewApi")
     private fun parseLteCell(cellInfo: CellInfoLte): CellTowerInfo? {
         val cellIdentity = cellInfo.cellIdentity
         val signal = cellInfo.cellSignalStrength
 
-        // Явная проверка без let
         var latitude: Double? = null
         var longitude: Double? = null
 
@@ -426,7 +421,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val finalLat = latitude ?: myLocation?.latitude ?: return null
         val finalLon = longitude ?: myLocation?.longitude ?: return null
 
-        // ИСПРАВЛЕНИЕ: bands.size (свойство), не bands.size() (метод)
         var band = 0
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
