@@ -161,18 +161,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun initializeUI() {
         mapContainer = findViewById(R.id.mapContainer)
 
+        // 1. Карта
         mapView = MapView(this)
         mapContainer.addView(mapView, 0, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
+        // 2. Индикатор загрузки
         loadingIndicator = ProgressBar(this).apply {
             visibility = View.GONE
             isIndeterminate = true
         }
         mapContainer.addView(loadingIndicator, FrameLayout.LayoutParams(120, 120, Gravity.CENTER))
 
+        // 3. Текст статуса
         statusText = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
@@ -188,30 +191,36 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(0, 90, 0, 0)
         })
 
+        // ИСПРАВЛЕНИЕ #1 и #2: Правильное создание ScrollView с TextView
         infoPanelText = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 11f
             setPadding(12, 8, 12, 8)
         }
+        
+        // Создаём ScrollView с правильной высотой СРАЗУ
+        val infoPanelHeight = (resources.displayMetrics.density * 200).toInt() // 200dp в пикселях
         infoPanel = ScrollView(this).apply {
             visibility = View.GONE
             setBackgroundColor(Color.argb(230, 20, 20, 20))
-            addView(infoPanelText, FrameLayout.LayoutParams(
+            // ИСПРАВЛЕНИЕ #1: Используем ViewGroup.LayoutParams, не FrameLayout.LayoutParams
+            addView(infoPanelText, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
-        // ИСПРАВЛЕНИЕ #2: Динамическая высота с максимумом
-        mapContainer.addView(infoPanel, FrameLayout.LayoutParams(
+        
+        // ИСПРАВЛЕНИЕ #2: Устанавливаем высоту ДО добавления в контейнер
+        val infoPanelParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
+            infoPanelHeight
         ).apply {
             gravity = Gravity.BOTTOM
             setMargins(16, 16, 16, 180)
-        }.also { params ->
-            params.height = (resources.displayMetrics.density * 200).toInt() // 200dp максимум
-        })
+        }
+        mapContainer.addView(infoPanel, infoPanelParams)
 
+        // 4. Кнопки
         btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
         mapContainer.addView(btnDiagnostics, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -416,7 +425,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val latitude = lat ?: myLocation?.latitude ?: return null
         val longitude = lon ?: myLocation?.longitude ?: return null
 
-        // ИСПРАВЛЕНИЕ #1: IntList не имеет firstOrNull(), используем [0] с проверкой
         val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 if (cellIdentity.bands.size() > 0) cellIdentity.bands[0] else 0
@@ -557,7 +565,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val latitude = lat ?: myLocation?.latitude ?: return null
         val longitude = lon ?: myLocation?.longitude ?: return null
 
-        // ИСПРАВЛЕНИЕ #1: IntList не имеет firstOrNull()
         val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 if (cellIdentity.bands.size() > 0) cellIdentity.bands[0] else 0
@@ -758,7 +765,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     }
                 } else {
                     isLocationPermissionGranted = false
-                    pendingScanAfterPermission = false  // ИСПРАВЛЕНИЕ #3: Сброс флага
+                    pendingScanAfterPermission = false
                     Toast.makeText(this, "Геолокация отключена", Toast.LENGTH_LONG).show()
                 }
             }
@@ -771,7 +778,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     }
                 } else {
                     isPhoneStatePermissionGranted = false
-                    pendingScanAfterPermission = false  // ИСПРАВЛЕНИЕ #3: Сброс флага
+                    pendingScanAfterPermission = false
                     Toast.makeText(this, "Нет доступа к данным о вышках", Toast.LENGTH_LONG).show()
                 }
             }
@@ -902,17 +909,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val y = point.y.toFloat()
                 val radius = 150f
 
-                // ИСПРАВЛЕНИЕ #4: Нормализация сигнала для разных технологий
+                // ИСПРАВЛЕНИЕ #3: Проверка на 0 перед нормализацией GSM
                 val signalStrength = when (tower.technology) {
-                    "LTE", "5G NR" -> tower.rsrp  // -140..-44 dBm
+                    "LTE", "5G NR" -> tower.rsrp
                     "GSM" -> {
-                        // GSM RSSI: -113..-51 dBm, нормализуем к RSRP диапазону
                         if (tower.rssi == 0) 0 else tower.rssi - 20
                     }
-                    "WCDMA" -> {
-                        // WCDMA RSCP: -120..-25 dBm, используем как есть
-                        tower.rssi
-                    }
+                    "WCDMA" -> tower.rssi
                     else -> tower.rsrp
                 }
 
