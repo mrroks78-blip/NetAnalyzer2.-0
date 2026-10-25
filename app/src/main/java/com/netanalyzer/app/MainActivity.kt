@@ -18,13 +18,20 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.telephony.CellIdentityGsm
+import android.telephony.CellIdentityLte
+import android.telephony.CellIdentityNr
+import android.telephony.CellIdentityWcdma
 import android.telephony.CellInfo
 import android.telephony.CellInfoGsm
 import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.CellInfoWcdma
+import android.telephony.CellSignalStrengthGsm
+import android.telephony.CellSignalStrengthLte
+import android.telephony.CellSignalStrengthNr
+import android.telephony.CellSignalStrengthWcdma
 import android.telephony.TelephonyManager
-import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -346,31 +353,35 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // ПРОСТОЙ парсер LTE - без latitude/longitude из CellIdentity
     @SuppressLint("NewApi")
     private fun parseLteCell(cellInfo: CellInfoLte): CellTowerInfo? {
-        val ci = cellInfo.cellIdentity.ci.toLong()
-        val lac = cellInfo.cellIdentity.lac
-        val tac = cellInfo.cellIdentity.tac
-        val pci = cellInfo.cellIdentity.pci
-        val earfcn = cellInfo.cellIdentity.earfcn
-        val rsrp = cellInfo.cellSignalStrength.rsrp
-        val rsrq = cellInfo.cellSignalStrength.rsrq
-        val rssi = cellInfo.cellSignalStrength.rssi
+        val ci = cellInfo.cellIdentity as CellIdentityLte
+        val sig = cellInfo.cellSignalStrength as CellSignalStrengthLte
+
+        val lac = if (ci.lac != UNKNOWN_VALUE) ci.lac else 0
+        val tac = if (ci.tac != UNKNOWN_VALUE) ci.tac else 0
+        val pci = if (ci.pci != UNKNOWN_VALUE) ci.pci else 0
+        val earfcn = if (ci.earfcn != UNKNOWN_VALUE) ci.earfcn else 0
+        val rsrp = if (sig.rsrp != UNKNOWN_VALUE) sig.rsrp else 0
+        val rsrq = if (sig.rsrq != UNKNOWN_VALUE) sig.rsrq else 0
+        val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
 
         val lat = myLocation?.latitude ?: return null
         val lon = myLocation?.longitude ?: return null
 
-        return CellTowerInfo(ci, lac, tac, pci, rsrp, rsrq, rssi, earfcn, 0, "LTE", lat, lon)
+        return CellTowerInfo(ci.ci.toLong(), lac, tac, pci, rsrp, rsrq, rssi, earfcn, 0, "LTE", lat, lon)
     }
 
     @SuppressLint("NewApi")
     private fun parseGsmCell(cellInfo: CellInfoGsm): CellTowerInfo? {
-        val cid = cellInfo.cellIdentity.cid.toLong()
-        val lac = cellInfo.cellIdentity.lac
-        val psc = cellInfo.cellIdentity.psc
-        val arfcn = cellInfo.cellIdentity.arfcn
-        val rssi = cellInfo.cellSignalStrength.rssi
+        val ci = cellInfo.cellIdentity as CellIdentityGsm
+        val sig = cellInfo.cellSignalStrength as CellSignalStrengthGsm
+
+        val lac = if (ci.lac != UNKNOWN_VALUE) ci.lac else 0
+        val cid = if (ci.cid != UNKNOWN_VALUE) ci.cid.toLong() else 0L
+        val psc = if (ci.psc != UNKNOWN_VALUE) ci.psc else 0
+        val arfcn = if (ci.arfcn != UNKNOWN_VALUE) ci.arfcn else 0
+        val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
 
         val lat = myLocation?.latitude ?: return null
         val lon = myLocation?.longitude ?: return null
@@ -380,11 +391,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     @SuppressLint("NewApi")
     private fun parseWcdmaCell(cellInfo: CellInfoWcdma): CellTowerInfo? {
-        val cid = cellInfo.cellIdentity.cid.toLong()
-        val lac = cellInfo.cellIdentity.lac
-        val psc = cellInfo.cellIdentity.psc
-        val uarfcn = cellInfo.cellIdentity.uarfcn
-        val rssi = cellInfo.cellSignalStrength.rssi
+        val ci = cellInfo.cellIdentity as CellIdentityWcdma
+        val sig = cellInfo.cellSignalStrength as CellSignalStrengthWcdma
+
+        val lac = if (ci.lac != UNKNOWN_VALUE) ci.lac else 0
+        val cid = if (ci.cid != UNKNOWN_VALUE) ci.cid.toLong() else 0L
+        val psc = if (ci.psc != UNKNOWN_VALUE) ci.psc else 0
+        val uarfcn = if (ci.uarfcn != UNKNOWN_VALUE) ci.uarfcn else 0
+        val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
 
         val lat = myLocation?.latitude ?: return null
         val lon = myLocation?.longitude ?: return null
@@ -394,18 +408,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     @SuppressLint("NewApi")
     private fun parseNrCell(cellInfo: CellInfoNr): CellTowerInfo? {
-        val nci = cellInfo.cellIdentity.nci
-        val tac = cellInfo.cellIdentity.tac
-        val pci = cellInfo.cellIdentity.pci
-        val nrarfcn = cellInfo.cellIdentity.nrarfcn
-        val rsrp = cellInfo.cellSignalStrength.rsrp
-        val rsrq = cellInfo.cellSignalStrength.rsrq
-        val rssi = cellInfo.cellSignalStrength.rssi
+        val ci = cellInfo.cellIdentity as CellIdentityNr
+        val sig = cellInfo.cellSignalStrength as CellSignalStrengthNr
+
+        val tac = if (ci.tac != UNKNOWN_VALUE) ci.tac else 0
+        val pci = if (ci.pci != UNKNOWN_VALUE) ci.pci else 0
+        val nrarfcn = if (ci.nrarfcn != UNKNOWN_VALUE) ci.nrarfcn else 0
+        val rsrp = if (sig.rsrp != UNKNOWN_VALUE) sig.rsrp else 0
+        val rsrq = if (sig.rsrq != UNKNOWN_VALUE) sig.rsrq else 0
+        val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
 
         val lat = myLocation?.latitude ?: return null
         val lon = myLocation?.longitude ?: return null
 
-        return CellTowerInfo(nci, 0, tac, pci, rsrp, rsrq, rssi, nrarfcn, 0, "5G NR", lat, lon)
+        return CellTowerInfo(ci.nci, 0, tac, pci, rsrp, rsrq, rssi, nrarfcn, 0, "5G NR", lat, lon)
     }
 
     private fun addTowerMarker(tower: CellTowerInfo) {
