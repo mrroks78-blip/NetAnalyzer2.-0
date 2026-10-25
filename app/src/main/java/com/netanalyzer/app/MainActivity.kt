@@ -16,11 +16,14 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.telephony.CellInfo
+import android.telephony.CellInfoGsm
+import android.telephony.CellInfoLte
+import android.telephony.CellInfoNr
+import android.telephony.CellInfoWcdma
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -31,6 +34,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -38,7 +42,6 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
@@ -51,29 +54,34 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     companion object {
         private const val TAG = "NetAnalyzer"
         private const val LOCATION_PERMISSION_REQUEST = 101
-        private const val FIRST_TILE_TIMEOUT_MS = 25000L
-        private const val SUBSEQUENT_TILE_TIMEOUT_MS = 10000L
+        private const val PHONE_STATE_PERMISSION_REQUEST = 102
         private const val COMPASS_SMOOTHING_WINDOW = 8
+        private const val UNKNOWN_VALUE = Int.MAX_VALUE
     }
 
     private lateinit var mapView: MapView
     private lateinit var mapContainer: FrameLayout
     private lateinit var btnToggleMap: Button
     private lateinit var btnMyLocation: Button
+    private lateinit var btnScan: Button
+    private lateinit var btnDiagnostics: Button
     private lateinit var compassView: ImageView
     private lateinit var loadingIndicator: ProgressBar
     private lateinit var statusText: TextView
+    private lateinit var infoPanel: ScrollView
+    private lateinit var infoPanelText: TextView
 
     private lateinit var locationManager: LocationManager
     private lateinit var sensorManager: SensorManager
+    private lateinit var telephonyManager: TelephonyManager
 
     private var isSatellite = false
-    private var currentSatelliteIndex = 0
     private var currentZoom = 15.0
-    private var currentCenter = GeoPoint(55.751244, 37.618423)
+    private var currentCenter = GeoPoint(54.5293, 36.2754)
     private var myLocation: GeoPoint? = null
     private var myLocationOverlay: MyLocationNewOverlay? = null
     private var isLocationPermissionGranted = false
+    private var isPhoneStatePermissionGranted = false
 
     private var currentAzimuth = 0f
     private val azimuthBuffer = FloatArray(COMPASS_SMOOTHING_WINDOW)
@@ -86,78 +94,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var hasAccelerometer = false
     private var hasMagnetometer = false
 
-    private val tileLoadHandler = Handler(Looper.getMainLooper())
-    private var tileLoadTimeout: Runnable? = null
-    private var isTileLoading = false
-    private var isFirstTileLoad = true
-
     private val heatmapOverlay = CoverageHeatmapOverlay()
     private val locationListener = LocationUpdateListener()
+    private val cellMarkers = mutableListOf<Marker>()
+    private var detectedTowers = mutableListOf<CellTowerInfo>()
+    private var pendingScanAfterPermission = false
 
-    private val satelliteSources = listOf(
-        XYTileSource(
-            "Космоснимки",
-            1, 18, 256, ".jpg",
-            arrayOf("https://tiles.kosmosnimki.ru/TileService.ashx?ProjectName=Map&LayerName=Satellite&TileMatrixSet=GoogleMapsCompatible&TileMatrix={z}&TileCol={x}&TileRow={y}"),
-            "© Роскосмос"
-        ),
-        XYTileSource(
-            "2GIS Satellite",
-            1, 19, 256, ".png",
-            arrayOf(
-                "https://tiles01.2gis.com/tiles?x={x}&y={y}&z={z}&v=1",
-                "https://tiles02.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
-            ),
-            "© 2GIS"
-        ),
-        XYTileSource(
-            "ESRI World Imagery",
-            1, 19, 256, ".jpg",
-            arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"),
-            "© Esri"
-        ),
-        XYTileSource(
-            "Google Satellite",
-            1, 20, 256, ".png",
-            arrayOf(
-                "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-                "https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-            ),
-            "© Google"
-        ),
-        XYTileSource(
-            "OpenTopoMap",
-            1, 17, 256, ".png",
-            arrayOf("https://a.tile.opentopomap.org/{z}/{x}/{y}.png"),
-            "© OpenTopoMap"
-        ),
-        XYTileSource(
-            "CartoDB Voyager",
-            1, 19, 256, ".png",
-            arrayOf("https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"),
-            "© CartoDB"
-        ),
-        XYTileSource(
-            "Wikimedia Maps",
-            1, 18, 256, ".png",
-            arrayOf("https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"),
-            "© Wikimedia"
-        )
-    )
-
-    data class CellTower(
-        val id: String,
+    data class CellTowerInfo(
+        val cid: Long,
+        val lac: Int,
+        val tac: Int,
+        val pci: Int,
+        val rsrp: Int,
+        val rsrq: Int,
+        val rssi: Int,
+        val frequency: Int,
+        val band: Int,
+        val technology: String,
         val latitude: Double,
-        val longitude: Double,
-        val operator: String,
-        val networkType: String,
-        val signalStrengthDbm: Int
-    )
-
-    private val mockTowers = listOf(
-        CellTower("1", 55.751244, 37.618423, "МТС", "4G", -65),
-        CellTower("2", 55.755244, 37.622423, "Билайн", "5G", -80),
-        CellTower("3", 55.749244, 37.610423, "Мегафон", "LTE", -95)
+        val longitude: Double
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -168,10 +123,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         initializeUI()
         initializeServices()
         setupMap()
-        loadCoverageData()
+        checkExistingPermissions()
         requestLocationPermission()
 
-        Log.d(TAG, "Activity created with ${satelliteSources.size} satellite sources")
+        Log.d(TAG, "Activity created")
+    }
+
+    private fun checkExistingPermissions() {
+        isLocationPermissionGranted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        isPhoneStatePermissionGranted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+
+        Log.d(TAG, "Permissions: location=$isLocationPermissionGranted, phone=$isPhoneStatePermissionGranted")
     }
 
     private fun initializeOSMDroid() {
@@ -188,18 +155,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         Configuration.getInstance().osmdroidBasePath = osmdroidBaseDir
         Configuration.getInstance().osmdroidTileCache = osmdroidTileDir
         Configuration.getInstance().load(this, prefs)
-
-        checkOfflineMaps()
-    }
-
-    private fun checkOfflineMaps() {
-        val tileCache = Configuration.getInstance().osmdroidTileCache
-        val files = tileCache.listFiles()
-        if (files != null && files.isNotEmpty()) {
-            Log.d(TAG, "Найдено офлайн-файлов: ${files.size}")
-        } else {
-            Log.d(TAG, "Офлайн карты не найдены")
-        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -207,11 +162,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapContainer = findViewById(R.id.mapContainer)
 
         mapView = MapView(this)
-        val mapParams = FrameLayout.LayoutParams(
+        mapContainer.addView(mapView, 0, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        mapContainer.addView(mapView, 0, mapParams)
+        ))
 
         loadingIndicator = ProgressBar(this).apply {
             visibility = View.GONE
@@ -234,18 +188,34 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(0, 90, 0, 0)
         })
 
-        btnToggleMap = createButton("Спутник", Color.parseColor("#2196F3")) { toggleMapType() }
-        mapContainer.addView(btnToggleMap, FrameLayout.LayoutParams(
+        // ИСПРАВЛЕНИЕ #4: ScrollView с TextView внутри для длинного текста
+        infoPanelText = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 11f
+            setPadding(12, 8, 12, 8)
+        }
+        infoPanel = ScrollView(this).apply {
+            visibility = View.GONE
+            setBackgroundColor(Color.argb(230, 20, 20, 20))
+            addView(infoPanelText, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        mapContainer.addView(infoPanel, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            200
+        ).apply {
+            gravity = Gravity.BOTTOM
+            setMargins(16, 16, 16, 180)
+        })
+
+        btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
+        mapContainer.addView(btnDiagnostics, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            setMargins(16, 16, 16, 16)
-        })
-
-        btnMyLocation = createButton("", Color.parseColor("#4CAF50")) { goToMyLocation() }
-        mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(140, 140).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
+            gravity = Gravity.TOP or Gravity.START
             setMargins(16, 16, 16, 16)
         })
 
@@ -255,6 +225,30 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         mapContainer.addView(compassView, FrameLayout.LayoutParams(160, 160).apply {
             gravity = Gravity.TOP or Gravity.START
+            setMargins(16, 80, 16, 16)
+        })
+
+        btnToggleMap = createButton("Спутник", Color.parseColor("#2196F3")) { toggleMapType() }
+        mapContainer.addView(btnToggleMap, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            setMargins(16, 16, 16, 16)
+        })
+
+        btnScan = createButton("Сканировать", Color.parseColor("#9C27B0")) { scanCellTowers() }
+        mapContainer.addView(btnScan, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            setMargins(16, 16, 16, 16)
+        })
+
+        btnMyLocation = createButton("Место", Color.parseColor("#4CAF50")) { goToMyLocation() }
+        mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(120, 120).apply {
+            gravity = Gravity.BOTTOM or Gravity.END
             setMargins(16, 16, 16, 16)
         })
     }
@@ -265,8 +259,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setBackgroundColor(backgroundColor)
             setTextColor(Color.WHITE)
             elevation = 8f
-            setPadding(24, 12, 24, 12)
-            textSize = 14f
+            setPadding(20, 10, 20, 10)
+            textSize = 13f
             setOnClickListener { onClick() }
         }
     }
@@ -274,6 +268,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun initializeServices() {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
 
         hasAccelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null
         hasMagnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) != null
@@ -293,6 +288,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         if (isLocationPermissionGranted) {
             enableMyLocationOverlay()
+            startLocationUpdates()
         }
     }
 
@@ -306,115 +302,389 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    private fun loadCoverageData() {
-        for (tower in mockTowers) {
-            val geoPoint = GeoPoint(tower.latitude, tower.longitude)
+    private fun requestLocationPermission() {
+        if (!isLocationPermissionGranted) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ),
+                LOCATION_PERMISSION_REQUEST
+            )
+        }
+    }
 
-            val marker = Marker(mapView).apply {
-                position = geoPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "${tower.operator} (${tower.networkType})"
-                setOnMarkerClickListener { _, _ ->
-                    showTowerDetails(tower)
-                    true
+    private fun scanCellTowers() {
+        if (!isLocationPermissionGranted) {
+            Toast.makeText(this, "Нужно разрешение на геолокацию", Toast.LENGTH_LONG).show()
+            requestLocationPermission()
+            pendingScanAfterPermission = true
+            return
+        }
+
+        if (!isPhoneStatePermissionGranted) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_PHONE_STATE),
+                PHONE_STATE_PERMISSION_REQUEST
+            )
+            pendingScanAfterPermission = true
+            return
+        }
+
+        performScan()
+    }
+
+    private fun performScan() {
+        showLoading("Сканирование сетей...")
+        detectedTowers.clear()
+        clearCellMarkers()
+        heatmapOverlay.clearTowers()
+
+        try {
+            val cellInfos: List<CellInfo>? = telephonyManager.allCellInfo
+
+            if (cellInfos == null || cellInfos.isEmpty()) {
+                hideLoading()
+                Toast.makeText(this, "Не удалось получить данные о вышках", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            Log.d(TAG, "Найдено ${cellInfos.size} ячеек")
+
+            for (cellInfo in cellInfos) {
+                if (!cellInfo.isRegistered) continue
+
+                val tower = when (cellInfo) {
+                    is CellInfoLte -> parseLteCell(cellInfo)
+                    is CellInfoGsm -> parseGsmCell(cellInfo)
+                    is CellInfoWcdma -> parseWcdmaCell(cellInfo)
+                    is CellInfoNr -> parseNrCell(cellInfo)
+                    else -> null
+                }
+
+                if (tower != null) {
+                    detectedTowers.add(tower)
+                    addTowerMarker(tower)
+                    heatmapOverlay.addTower(tower)
                 }
             }
-            mapView.overlays.add(marker)
-            heatmapOverlay.addTower(tower)
+
+            hideLoading()
+            mapView.invalidate()
+
+            if (detectedTowers.isEmpty()) {
+                Toast.makeText(this, "Вышки не найдены. Попробуй ещё раз.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Найдено ${detectedTowers.size} вышек", Toast.LENGTH_LONG).show()
+                showTowerInfo(detectedTowers.first())
+            }
+
+        } catch (e: SecurityException) {
+            hideLoading()
+            Toast.makeText(this, "Нет доступа к данным о вышках", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "SecurityException", e)
+        } catch (e: Exception) {
+            hideLoading()
+            Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Error scanning", e)
         }
-        mapView.controller.setCenter(currentCenter)
+    }
+
+    @SuppressLint("NewApi")
+    private fun parseLteCell(cellInfo: CellInfoLte): CellTowerInfo? {
+        val cellIdentity = cellInfo.cellIdentity
+        val signal = cellInfo.cellSignalStrength
+
+        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.latitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.longitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val latitude = lat ?: myLocation?.latitude ?: return null
+        val longitude = lon ?: myLocation?.longitude ?: return null
+
+        val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try { cellIdentity.bands.firstOrNull() ?: 0 } catch (e: Exception) { 0 }
+        } else 0
+
+        val lac = if (cellIdentity.lac != UNKNOWN_VALUE) cellIdentity.lac else 0
+        val tac = if (cellIdentity.tac != UNKNOWN_VALUE) cellIdentity.tac else 0
+        val pci = if (cellIdentity.pci != UNKNOWN_VALUE) cellIdentity.pci else 0
+        val earfcn = if (cellIdentity.earfcn != UNKNOWN_VALUE) cellIdentity.earfcn else 0
+        val rsrp = if (signal.rsrp != UNKNOWN_VALUE) signal.rsrp else 0
+        val rsrq = if (signal.rsrq != UNKNOWN_VALUE) signal.rsrq else 0
+        val rssi = if (signal.rssi != UNKNOWN_VALUE) signal.rssi else 0
+
+        return CellTowerInfo(
+            cid = cellIdentity.ci.toLong(),
+            lac = lac,
+            tac = tac,
+            pci = pci,
+            rsrp = rsrp,
+            rsrq = rsrq,
+            rssi = rssi,
+            frequency = earfcn,
+            band = band,
+            technology = "LTE",
+            latitude = latitude,
+            longitude = longitude
+        )
+    }
+
+    @SuppressLint("NewApi")
+    private fun parseGsmCell(cellInfo: CellInfoGsm): CellTowerInfo? {
+        val cellIdentity = cellInfo.cellIdentity
+        val signal = cellInfo.cellSignalStrength
+
+        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.latitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.longitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val latitude = lat ?: myLocation?.latitude ?: return null
+        val longitude = lon ?: myLocation?.longitude ?: return null
+
+        val lac = if (cellIdentity.lac != UNKNOWN_VALUE) cellIdentity.lac else 0
+        val cid = if (cellIdentity.cid != UNKNOWN_VALUE) cellIdentity.cid.toLong() else 0L
+        val psc = if (cellIdentity.psc != UNKNOWN_VALUE) cellIdentity.psc else 0
+        val arfcn = if (cellIdentity.arfcn != UNKNOWN_VALUE) cellIdentity.arfcn else 0
+        val rssi = if (signal.rssi != UNKNOWN_VALUE) signal.rssi else 0
+
+        return CellTowerInfo(
+            cid = cid,
+            lac = lac,
+            tac = 0,
+            pci = psc,
+            rsrp = 0,
+            rsrq = 0,
+            rssi = rssi,
+            frequency = arfcn,
+            band = 0,
+            technology = "GSM",
+            latitude = latitude,
+            longitude = longitude
+        )
+    }
+
+    @SuppressLint("NewApi")
+    private fun parseWcdmaCell(cellInfo: CellInfoWcdma): CellTowerInfo? {
+        val cellIdentity = cellInfo.cellIdentity
+        val signal = cellInfo.cellSignalStrength
+
+        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.latitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.longitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val latitude = lat ?: myLocation?.latitude ?: return null
+        val longitude = lon ?: myLocation?.longitude ?: return null
+
+        val lac = if (cellIdentity.lac != UNKNOWN_VALUE) cellIdentity.lac else 0
+        val cid = if (cellIdentity.cid != UNKNOWN_VALUE) cellIdentity.cid.toLong() else 0L
+        val psc = if (cellIdentity.psc != UNKNOWN_VALUE) cellIdentity.psc else 0
+        val uarfcn = if (cellIdentity.uarfcn != UNKNOWN_VALUE) cellIdentity.uarfcn else 0
+        val rssi = if (signal.rssi != UNKNOWN_VALUE) signal.rssi else 0
+
+        return CellTowerInfo(
+            cid = cid,
+            lac = lac,
+            tac = 0,
+            pci = psc,
+            rsrp = 0,
+            rsrq = 0,
+            rssi = rssi,
+            frequency = uarfcn,
+            band = 0,
+            technology = "WCDMA",
+            latitude = latitude,
+            longitude = longitude
+        )
+    }
+
+    @SuppressLint("NewApi")
+    private fun parseNrCell(cellInfo: CellInfoNr): CellTowerInfo? {
+        val cellIdentity = cellInfo.cellIdentity as? android.telephony.CellIdentityNr ?: return null
+        val signal = cellInfo.cellSignalStrength as? android.telephony.CellSignalStrengthNr ?: return null
+
+        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.latitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cellIdentity.longitude?.let {
+                val value = it / 1e7
+                if (value != 0.0) value else null
+            }
+        } else null
+
+        val latitude = lat ?: myLocation?.latitude ?: return null
+        val longitude = lon ?: myLocation?.longitude ?: return null
+
+        val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try { cellIdentity.bands.firstOrNull() ?: 0 } catch (e: Exception) { 0 }
+        } else 0
+
+        val tac = if (cellIdentity.tac != UNKNOWN_VALUE) cellIdentity.tac else 0
+        val pci = if (cellIdentity.pci != UNKNOWN_VALUE) cellIdentity.pci else 0
+        val nrarfcn = if (cellIdentity.nrarfcn != UNKNOWN_VALUE) cellIdentity.nrarfcn else 0
+        val rsrp = if (signal.rsrp != UNKNOWN_VALUE) signal.rsrp else 0
+        val rsrq = if (signal.rsrq != UNKNOWN_VALUE) signal.rsrq else 0
+        val rssi = if (signal.rssi != UNKNOWN_VALUE) signal.rssi else 0
+
+        return CellTowerInfo(
+            cid = cellIdentity.nci,
+            lac = 0,
+            tac = tac,
+            pci = pci,
+            rsrp = rsrp,
+            rsrq = rsrq,
+            rssi = rssi,
+            frequency = nrarfcn,
+            band = band,
+            technology = "5G NR",
+            latitude = latitude,
+            longitude = longitude
+        )
+    }
+
+    private fun addTowerMarker(tower: CellTowerInfo) {
+        val geoPoint = GeoPoint(tower.latitude, tower.longitude)
+        val marker = Marker(mapView).apply {
+            position = geoPoint
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            title = "${tower.technology} CID:${tower.cid}"
+            snippet = "RSRP: ${tower.rsrp} dBm\nPCI: ${tower.pci}"
+            setOnMarkerClickListener { _, _ ->
+                showTowerInfo(tower)
+                true
+            }
+        }
+        mapView.overlays.add(marker)
+        cellMarkers.add(marker)
+    }
+
+    private fun clearCellMarkers() {
+        for (marker in cellMarkers) {
+            mapView.overlays.remove(marker)
+        }
+        cellMarkers.clear()
+    }
+
+    private fun showTowerInfo(tower: CellTowerInfo) {
+        val info = buildString {
+            appendLine(" ${tower.technology} Вышка")
+            appendLine("━━━━━━━━━━━━━━━━━━━━")
+            appendLine("CID: ${tower.cid}")
+            appendLine("LAC/TAC: ${tower.lac}/${tower.tac}")
+            appendLine("PCI: ${tower.pci}")
+            appendLine("RSRP: ${tower.rsrp} dBm")
+            appendLine("RSRQ: ${tower.rsrq} dB")
+            appendLine("RSSI: ${tower.rssi} dBm")
+            appendLine("Частота (EARFCN): ${tower.frequency}")
+            appendLine("Диапазон (Band): ${tower.band}")
+            appendLine("Координаты: ${String.format("%.5f", tower.latitude)}, ${String.format("%.5f", tower.longitude)}")
+        }
+
+        infoPanel.visibility = View.VISIBLE
+        infoPanelText.text = info
+    }
+
+    private fun showDiagnostics() {
+        val sb = StringBuilder()
+        sb.appendLine("ДИАГНОСТИКА СЕТИ")
+        sb.appendLine("━━━━━━━━━━━━━━━━━━━━")
+        sb.appendLine("Оператор: ${telephonyManager.networkOperatorName.ifEmpty { "Неизвестно" }}")
+        sb.appendLine("MCC/MNC: ${telephonyManager.networkOperator.ifEmpty { "—" }}")
+        sb.appendLine("Тип сети: ${getNetworkTypeName(telephonyManager.networkType)}")
+        sb.appendLine("SIM: ${getSimStateName(telephonyManager.simState)}")
+        sb.appendLine()
+        sb.appendLine("Местоположение:")
+        if (myLocation != null) {
+            sb.appendLine("  Широта: ${String.format("%.5f", myLocation!!.latitude)}")
+            sb.appendLine("  Долгота: ${String.format("%.5f", myLocation!!.longitude)}")
+        } else {
+            sb.appendLine("  Не определено")
+        }
+        sb.appendLine()
+        sb.appendLine("Обнаружено вышек: ${detectedTowers.size}")
+        for (tower in detectedTowers) {
+            sb.appendLine("  - ${tower.technology} CID:${tower.cid} RSRP:${tower.rsrp}dBm")
+        }
+        sb.appendLine()
+        sb.appendLine("Кэш карт: ${if (isKalugaRegionCached()) "ЕСТЬ" else "НЕТ"}")
+
+        infoPanel.visibility = View.VISIBLE
+        infoPanelText.text = sb.toString()
+    }
+
+    private fun getNetworkTypeName(type: Int): String = when (type) {
+        TelephonyManager.NETWORK_TYPE_NR -> "5G NR"
+        TelephonyManager.NETWORK_TYPE_LTE -> "LTE (4G)"
+        TelephonyManager.NETWORK_TYPE_HSPA, TelephonyManager.NETWORK_TYPE_HSPAP -> "HSPA (3G)"
+        TelephonyManager.NETWORK_TYPE_UMTS -> "UMTS (3G)"
+        TelephonyManager.NETWORK_TYPE_EDGE -> "EDGE (2G)"
+        TelephonyManager.NETWORK_TYPE_GPRS -> "GPRS (2G)"
+        else -> "Unknown ($type)"
+    }
+
+    private fun getSimStateName(state: Int): String = when (state) {
+        TelephonyManager.SIM_STATE_READY -> "Готов"
+        TelephonyManager.SIM_STATE_ABSENT -> "Нет SIM"
+        TelephonyManager.SIM_STATE_PIN_REQUIRED -> "Нужен PIN"
+        TelephonyManager.SIM_STATE_PUK_REQUIRED -> "Нужен PUK"
+        TelephonyManager.SIM_STATE_NETWORK_LOCKED -> "Сеть заблокирована"
+        else -> "Неизвестно ($state)"
+    }
+
+    private fun isKalugaRegionCached(): Boolean {
+        val tileCache = Configuration.getInstance().osmdroidTileCache
+        val kalugaCacheDir = File(tileCache, "Mapnik")
+        return kalugaCacheDir.exists() && kalugaCacheDir.listFiles()?.isNotEmpty() == true
     }
 
     private fun toggleMapType() {
-        if (!isNetworkAvailable()) {
-            Toast.makeText(this, "Нет интернета", Toast.LENGTH_LONG).show()
-            return
-        }
-
         isSatellite = !isSatellite
-        cancelTileLoadTimeout()
 
         if (isSatellite) {
-            currentSatelliteIndex = 0
-            isFirstTileLoad = true
-            tryLoadSatelliteSource()
-            btnToggleMap.text = "Схема"
-        } else {
-            mapView.setTileSource(TileSourceFactory.MAPNIK)
-            btnToggleMap.text = "Спутник"
-            hideLoading()
-            mapView.invalidate()
-        }
-    }
-
-    private fun tryLoadSatelliteSource() {
-        if (currentSatelliteIndex >= satelliteSources.size) {
-            Log.e(TAG, "Все ${satelliteSources.size} источников недоступны")
-            Toast.makeText(this, "Не удалось загрузить спутниковую карту", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Спутник недоступен в РФ. Используется схема.", Toast.LENGTH_LONG).show()
             isSatellite = false
-            mapView.setTileSource(TileSourceFactory.MAPNIK)
-            btnToggleMap.text = "Спутник"
-            hideLoading()
-            return
         }
 
-        val source = satelliteSources[currentSatelliteIndex]
-        Log.d(TAG, "Пробуем источник #$currentSatelliteIndex: ${source.name()}")
-
-        showLoading("Загрузка: ${source.name()}")
-        mapView.setTileSource(source)
-        isTileLoading = true
-
-        val timeout = if (isFirstTileLoad) FIRST_TILE_TIMEOUT_MS else SUBSEQUENT_TILE_TIMEOUT_MS
-
-        tileLoadTimeout = Runnable {
-            if (isSatellite && isTileLoading) {
-                Log.w(TAG, "Таймаут для ${source.name()}")
-                isTileLoading = false
-                isFirstTileLoad = false
-                currentSatelliteIndex++
-                tryLoadSatelliteSource()
-            }
-        }
-        tileLoadHandler.postDelayed(tileLoadTimeout!!, timeout)
-    }
-
-    private fun cancelTileLoadTimeout() {
-        tileLoadTimeout?.let {
-            tileLoadHandler.removeCallbacks(it)
-        }
-        tileLoadTimeout = null
-        isTileLoading = false
-    }
-
-    private fun showLoading(message: String) {
-        loadingIndicator.visibility = View.VISIBLE
-        statusText.visibility = View.VISIBLE
-        statusText.text = message
-    }
-
-    private fun hideLoading() {
-        loadingIndicator.visibility = View.GONE
-        statusText.visibility = View.GONE
-        cancelTileLoadTimeout()
-    }
-
-    private fun requestLocationPermission() {
-        when {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED -> {
-                isLocationPermissionGranted = true
-                enableMyLocationOverlay()
-                startLocationUpdates()
-            }
-            else -> {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                    LOCATION_PERMISSION_REQUEST
-                )
-            }
-        }
+        mapView.setTileSource(TileSourceFactory.MAPNIK)
+        btnToggleMap.text = "Схема"
+        mapView.invalidate()
     }
 
     private fun startLocationUpdates() {
@@ -423,15 +693,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    3000L, 10f, locationListener
+                    LocationManager.GPS_PROVIDER, 3000L, 10f, locationListener
                 )
             }
-
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER,
-                    5000L, 50f, locationListener
+                    LocationManager.NETWORK_PROVIDER, 5000L, 50f, locationListener
                 )
             }
         } catch (e: SecurityException) {
@@ -450,6 +717,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private inner class LocationUpdateListener : LocationListener {
         override fun onLocationChanged(location: Location) {
             myLocation = GeoPoint(location.latitude, location.longitude)
+            Log.d(TAG, "Location: ${location.latitude}, ${location.longitude}")
         }
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
@@ -470,14 +738,32 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                isLocationPermissionGranted = true
-                enableMyLocationOverlay()
-                startLocationUpdates()
-            } else {
-                isLocationPermissionGranted = false
-                Toast.makeText(this, "Геолокация отключена", Toast.LENGTH_LONG).show()
+        when (requestCode) {
+            LOCATION_PERMISSION_REQUEST -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    isLocationPermissionGranted = true
+                    enableMyLocationOverlay()
+                    startLocationUpdates()
+                    if (pendingScanAfterPermission) {
+                        pendingScanAfterPermission = false
+                        scanCellTowers()
+                    }
+                } else {
+                    isLocationPermissionGranted = false
+                    Toast.makeText(this, "Геолокация отключена", Toast.LENGTH_LONG).show()
+                }
+            }
+            PHONE_STATE_PERMISSION_REQUEST -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    isPhoneStatePermissionGranted = true
+                    if (pendingScanAfterPermission) {
+                        pendingScanAfterPermission = false
+                        performScan()
+                    }
+                } else {
+                    isPhoneStatePermissionGranted = false
+                    Toast.makeText(this, "Нет доступа к данным о вышках", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -485,12 +771,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent?) {
         when (event?.sensor?.type) {
             Sensor.TYPE_ACCELEROMETER -> {
-                accelerometerValues = event.values.clone()
-                updateCompass()
+                if (event.values.size >= 3) {
+                    accelerometerValues = floatArrayOf(event.values[0], event.values[1], event.values[2])
+                    updateCompass()
+                }
             }
             Sensor.TYPE_MAGNETIC_FIELD -> {
-                magnetometerValues = event.values.clone()
-                updateCompass()
+                if (event.values.size >= 3) {
+                    magnetometerValues = floatArrayOf(event.values[0], event.values[1], event.values[2])
+                    updateCompass()
+                }
             }
         }
     }
@@ -512,7 +802,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 for (i in 0 until azimuthBufferCount) {
                     sum += azimuthBuffer[i]
                 }
-                val smoothedAzimuth = sum / azimuthBufferCount
+                val smoothedAzimuth = if (azimuthBufferCount > 0) sum / azimuthBufferCount else azimuth
 
                 rotateCompass(smoothedAzimuth)
             }
@@ -554,7 +844,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
         mapView.onPause()
         sensorManager.unregisterListener(this)
-        cancelTileLoadTimeout()
     }
 
     override fun onDestroy() {
@@ -562,42 +851,34 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapView.onDetach()
         sensorManager.unregisterListener(this)
         stopLocationUpdates()
-        cancelTileLoadTimeout()
+        clearCellMarkers()
+        detectedTowers.clear()
         Log.d(TAG, "Destroyed")
     }
 
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    private fun showLoading(message: String) {
+        loadingIndicator.visibility = View.VISIBLE
+        statusText.visibility = View.VISIBLE
+        statusText.text = message
     }
 
-    private fun showTowerDetails(tower: CellTower) {
-        val explanation = getExplanation(tower.signalStrengthDbm)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("${tower.operator} (${tower.networkType})")
-            .setMessage("Уровень сигнала: ${tower.signalStrengthDbm} dBm\n\n$explanation")
-            .setPositiveButton("OK", null)
-            .show()
-    }
-
-    private fun getExplanation(dbm: Int): String = when {
-        dbm >= -70 -> "Отличный сигнал. Идеально для 4K."
-        dbm >= -85 -> "Хороший сигнал. Стабильный интернет."
-        dbm >= -100 -> "Средний сигнал. Возможны задержки."
-        dbm >= -110 -> "Слабый сигнал. Только текст."
-        else -> "Очень слабый сигнал."
+    private fun hideLoading() {
+        loadingIndicator.visibility = View.GONE
+        statusText.visibility = View.GONE
     }
 
     private class CoverageHeatmapOverlay : Overlay() {
-        private val towers = mutableListOf<CellTower>()
+        private val towers = mutableListOf<CellTowerInfo>()
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
         }
 
-        fun addTower(tower: CellTower) {
+        fun addTower(tower: CellTowerInfo) {
             towers.add(tower)
+        }
+
+        fun clearTowers() {
+            towers.clear()
         }
 
         override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
@@ -611,10 +892,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val y = point.y.toFloat()
                 val radius = 150f
 
+                // ИСПРАВЛЕНИЕ #2: Используем rssi для GSM/WCDMA, rsrp для LTE/5G
+                val signalStrength = when (tower.technology) {
+                    "LTE", "5G NR" -> tower.rsrp
+                    else -> tower.rssi
+                }
+
                 val color = when {
-                    tower.signalStrengthDbm >= -70 -> Color.argb(102, 0, 255, 0)
-                    tower.signalStrengthDbm >= -85 -> Color.argb(102, 136, 255, 0)
-                    tower.signalStrengthDbm >= -100 -> Color.argb(102, 255, 255, 0)
+                    signalStrength >= -85 -> Color.argb(102, 0, 255, 0)
+                    signalStrength >= -100 -> Color.argb(102, 136, 255, 0)
+                    signalStrength >= -110 -> Color.argb(102, 255, 255, 0)
                     else -> Color.argb(102, 255, 0, 0)
                 }
 
