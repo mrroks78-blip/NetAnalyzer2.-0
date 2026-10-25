@@ -18,11 +18,19 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.telephony.CellIdentityGsm
+import android.telephony.CellIdentityLte
+import android.telephony.CellIdentityNr
+import android.telephony.CellIdentityWcdma
 import android.telephony.CellInfo
 import android.telephony.CellInfoGsm
 import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.CellInfoWcdma
+import android.telephony.CellSignalStrengthGsm
+import android.telephony.CellSignalStrengthLte
+import android.telephony.CellSignalStrengthNr
+import android.telephony.CellSignalStrengthWcdma
 import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.Gravity
@@ -49,10 +57,6 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
 
-// ══════════════════════════════════════════════════════════════
-// ВАЖНО: Этот data class ДОЛЖЕН быть здесь, ДО class MainActivity
-// Если он есть ещё где-то внутри класса — УДАЛИ его оттуда!
-// ═══════════════════════════════════════════════════════════════
 data class CellTowerInfo(
     val cid: Long,
     val lac: Int,
@@ -401,19 +405,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     @SuppressLint("NewApi")
     private fun parseLteCell(cellInfo: CellInfoLte): CellTowerInfo? {
-        val cellIdentity = cellInfo.cellIdentity
-        val signal = cellInfo.cellSignalStrength
+        val cellIdentity = cellInfo.cellIdentity as CellIdentityLte
+        val signal = cellInfo.cellSignalStrength as CellSignalStrengthLte
 
         var latitude: Double? = null
         var longitude: Double? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val latRaw = cellIdentity.latitude
-            if (latRaw != null && latRaw != 0L) {
+            if (latRaw != null && latRaw != 0) {
                 latitude = latRaw / 1e7
             }
             val lonRaw = cellIdentity.longitude
-            if (lonRaw != null && lonRaw != 0L) {
+            if (lonRaw != null && lonRaw != 0) {
                 longitude = lonRaw / 1e7
             }
         }
@@ -458,19 +462,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     @SuppressLint("NewApi")
     private fun parseGsmCell(cellInfo: CellInfoGsm): CellTowerInfo? {
-        val cellIdentity = cellInfo.cellIdentity
-        val signal = cellInfo.cellSignalStrength
+        val cellIdentity = cellInfo.cellIdentity as CellIdentityGsm
+        val signal = cellInfo.cellSignalStrength as CellSignalStrengthGsm
 
         var latitude: Double? = null
         var longitude: Double? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val latRaw = cellIdentity.latitude
-            if (latRaw != null && latRaw != 0L) {
+            if (latRaw != null && latRaw != 0) {
                 latitude = latRaw / 1e7
             }
             val lonRaw = cellIdentity.longitude
-            if (lonRaw != null && lonRaw != 0L) {
+            if (lonRaw != null && lonRaw != 0) {
                 longitude = lonRaw / 1e7
             }
         }
@@ -502,19 +506,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     @SuppressLint("NewApi")
     private fun parseWcdmaCell(cellInfo: CellInfoWcdma): CellTowerInfo? {
-        val cellIdentity = cellInfo.cellIdentity
-        val signal = cellInfo.cellSignalStrength
+        val cellIdentity = cellInfo.cellIdentity as CellIdentityWcdma
+        val signal = cellInfo.cellSignalStrength as CellSignalStrengthWcdma
 
         var latitude: Double? = null
         var longitude: Double? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val latRaw = cellIdentity.latitude
-            if (latRaw != null && latRaw != 0L) {
+            if (latRaw != null && latRaw != 0) {
                 latitude = latRaw / 1e7
             }
             val lonRaw = cellIdentity.longitude
-            if (lonRaw != null && lonRaw != 0L) {
+            if (lonRaw != null && lonRaw != 0) {
                 longitude = lonRaw / 1e7
             }
         }
@@ -546,19 +550,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     @SuppressLint("NewApi")
     private fun parseNrCell(cellInfo: CellInfoNr): CellTowerInfo? {
-        val cellIdentity = cellInfo.cellIdentity as? android.telephony.CellIdentityNr ?: return null
-        val signal = cellInfo.cellSignalStrength as? android.telephony.CellSignalStrengthNr ?: return null
+        val cellIdentity = cellInfo.cellIdentity as CellIdentityNr
+        val signal = cellInfo.cellSignalStrength as CellSignalStrengthNr
 
         var latitude: Double? = null
         var longitude: Double? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val latRaw = cellIdentity.latitude
-            if (latRaw != null && latRaw != 0L) {
+            if (latRaw != null && latRaw != 0) {
                 latitude = latRaw / 1e7
             }
             val lonRaw = cellIdentity.longitude
-            if (lonRaw != null && lonRaw != 0L) {
+            if (lonRaw != null && lonRaw != 0) {
                 longitude = lonRaw / 1e7
             }
         }
