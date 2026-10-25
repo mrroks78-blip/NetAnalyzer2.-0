@@ -10,6 +10,6 @@
 -keep class kotlinx.coroutines.** { *; }
 
 # Сохранить имена полей для data class
--keepclassmembers class com.netanalyzer.app.MainActivity$CellTower {
+-keepclassmembers class com.netanalyzer.app.CellTowerInfo {
     <fields>;
 }
