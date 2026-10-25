@@ -188,7 +188,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(0, 90, 0, 0)
         })
 
-        // ИСПРАВЛЕНИЕ #4: ScrollView с TextView внутри для длинного текста
         infoPanelText = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 11f
@@ -202,12 +201,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
+        // ИСПРАВЛЕНИЕ #2: Динамическая высота с максимумом
         mapContainer.addView(infoPanel, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            200
+            ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM
             setMargins(16, 16, 16, 180)
+        }.also { params ->
+            params.height = (resources.displayMetrics.density * 200).toInt() // 200dp максимум
         })
 
         btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
@@ -414,8 +416,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val latitude = lat ?: myLocation?.latitude ?: return null
         val longitude = lon ?: myLocation?.longitude ?: return null
 
+        // ИСПРАВЛЕНИЕ #1: IntList не имеет firstOrNull(), используем [0] с проверкой
         val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try { cellIdentity.bands.firstOrNull() ?: 0 } catch (e: Exception) { 0 }
+            try {
+                if (cellIdentity.bands.size() > 0) cellIdentity.bands[0] else 0
+            } catch (e: Exception) { 0 }
         } else 0
 
         val lac = if (cellIdentity.lac != UNKNOWN_VALUE) cellIdentity.lac else 0
@@ -552,8 +557,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val latitude = lat ?: myLocation?.latitude ?: return null
         val longitude = lon ?: myLocation?.longitude ?: return null
 
+        // ИСПРАВЛЕНИЕ #1: IntList не имеет firstOrNull()
         val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try { cellIdentity.bands.firstOrNull() ?: 0 } catch (e: Exception) { 0 }
+            try {
+                if (cellIdentity.bands.size() > 0) cellIdentity.bands[0] else 0
+            } catch (e: Exception) { 0 }
         } else 0
 
         val tac = if (cellIdentity.tac != UNKNOWN_VALUE) cellIdentity.tac else 0
@@ -750,6 +758,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     }
                 } else {
                     isLocationPermissionGranted = false
+                    pendingScanAfterPermission = false  // ИСПРАВЛЕНИЕ #3: Сброс флага
                     Toast.makeText(this, "Геолокация отключена", Toast.LENGTH_LONG).show()
                 }
             }
@@ -762,6 +771,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     }
                 } else {
                     isPhoneStatePermissionGranted = false
+                    pendingScanAfterPermission = false  // ИСПРАВЛЕНИЕ #3: Сброс флага
                     Toast.makeText(this, "Нет доступа к данным о вышках", Toast.LENGTH_LONG).show()
                 }
             }
@@ -892,10 +902,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val y = point.y.toFloat()
                 val radius = 150f
 
-                // ИСПРАВЛЕНИЕ #2: Используем rssi для GSM/WCDMA, rsrp для LTE/5G
+                // ИСПРАВЛЕНИЕ #4: Нормализация сигнала для разных технологий
                 val signalStrength = when (tower.technology) {
-                    "LTE", "5G NR" -> tower.rsrp
-                    else -> tower.rssi
+                    "LTE", "5G NR" -> tower.rsrp  // -140..-44 dBm
+                    "GSM" -> {
+                        // GSM RSSI: -113..-51 dBm, нормализуем к RSRP диапазону
+                        if (tower.rssi == 0) 0 else tower.rssi - 20
+                    }
+                    "WCDMA" -> {
+                        // WCDMA RSCP: -120..-25 dBm, используем как есть
+                        tower.rssi
+                    }
+                    else -> tower.rsrp
                 }
 
                 val color = when {
