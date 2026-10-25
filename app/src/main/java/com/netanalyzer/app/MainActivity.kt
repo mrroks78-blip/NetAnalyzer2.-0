@@ -49,7 +49,10 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
 
-// ИСПРАВЛЕНИЕ: data class ВЫНЕСЕН НАРУЖУ (вне MainActivity)
+// ══════════════════════════════════════════════════════════════
+// ВАЖНО: Этот data class ДОЛЖЕН быть здесь, ДО class MainActivity
+// Если он есть ещё где-то внутри класса — УДАЛИ его оттуда!
+// ═══════════════════════════════════════════════════════════════
 data class CellTowerInfo(
     val cid: Long,
     val lac: Int,
@@ -194,7 +197,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             textSize = 11f
             setPadding(12, 8, 12, 8)
         }
-        
+
         val infoPanelHeight = (resources.displayMetrics.density * 200).toInt()
         infoPanel = ScrollView(this).apply {
             visibility = View.GONE
@@ -204,7 +207,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
-        
+
         val infoPanelParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             infoPanelHeight
@@ -396,33 +399,44 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // ИСПРАВЛЕНИЕ: Явная проверка без let, bands.size (не size())
+    // ═══════════════════════════════════════════════════════════
+
     @SuppressLint("NewApi")
     private fun parseLteCell(cellInfo: CellInfoLte): CellTowerInfo? {
         val cellIdentity = cellInfo.cellIdentity
         val signal = cellInfo.cellSignalStrength
 
-        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.latitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
+        // Явная проверка без let
+        var latitude: Double? = null
+        var longitude: Double? = null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val latRaw = cellIdentity.latitude
+            if (latRaw != null && latRaw != 0L) {
+                latitude = latRaw / 1e7
             }
-        } else null
-
-        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.longitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
+            val lonRaw = cellIdentity.longitude
+            if (lonRaw != null && lonRaw != 0L) {
+                longitude = lonRaw / 1e7
             }
-        } else null
+        }
 
-        val latitude = lat ?: myLocation?.latitude ?: return null
-        val longitude = lon ?: myLocation?.longitude ?: return null
+        val finalLat = latitude ?: myLocation?.latitude ?: return null
+        val finalLon = longitude ?: myLocation?.longitude ?: return null
 
-        val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        // ИСПРАВЛЕНИЕ: bands.size (свойство), не bands.size() (метод)
+        var band = 0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                if (cellIdentity.bands.size() > 0) cellIdentity.bands[0] else 0
-            } catch (e: Exception) { 0 }
-        } else 0
+                if (cellIdentity.bands.size > 0) {
+                    band = cellIdentity.bands[0]
+                }
+            } catch (e: Exception) {
+                band = 0
+            }
+        }
 
         val lac = if (cellIdentity.lac != UNKNOWN_VALUE) cellIdentity.lac else 0
         val tac = if (cellIdentity.tac != UNKNOWN_VALUE) cellIdentity.tac else 0
@@ -443,8 +457,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             frequency = earfcn,
             band = band,
             technology = "LTE",
-            latitude = latitude,
-            longitude = longitude
+            latitude = finalLat,
+            longitude = finalLon
         )
     }
 
@@ -453,22 +467,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val cellIdentity = cellInfo.cellIdentity
         val signal = cellInfo.cellSignalStrength
 
-        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.latitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
-            }
-        } else null
+        var latitude: Double? = null
+        var longitude: Double? = null
 
-        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.longitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val latRaw = cellIdentity.latitude
+            if (latRaw != null && latRaw != 0L) {
+                latitude = latRaw / 1e7
             }
-        } else null
+            val lonRaw = cellIdentity.longitude
+            if (lonRaw != null && lonRaw != 0L) {
+                longitude = lonRaw / 1e7
+            }
+        }
 
-        val latitude = lat ?: myLocation?.latitude ?: return null
-        val longitude = lon ?: myLocation?.longitude ?: return null
+        val finalLat = latitude ?: myLocation?.latitude ?: return null
+        val finalLon = longitude ?: myLocation?.longitude ?: return null
 
         val lac = if (cellIdentity.lac != UNKNOWN_VALUE) cellIdentity.lac else 0
         val cid = if (cellIdentity.cid != UNKNOWN_VALUE) cellIdentity.cid.toLong() else 0L
@@ -487,8 +501,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             frequency = arfcn,
             band = 0,
             technology = "GSM",
-            latitude = latitude,
-            longitude = longitude
+            latitude = finalLat,
+            longitude = finalLon
         )
     }
 
@@ -497,22 +511,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val cellIdentity = cellInfo.cellIdentity
         val signal = cellInfo.cellSignalStrength
 
-        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.latitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
-            }
-        } else null
+        var latitude: Double? = null
+        var longitude: Double? = null
 
-        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.longitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val latRaw = cellIdentity.latitude
+            if (latRaw != null && latRaw != 0L) {
+                latitude = latRaw / 1e7
             }
-        } else null
+            val lonRaw = cellIdentity.longitude
+            if (lonRaw != null && lonRaw != 0L) {
+                longitude = lonRaw / 1e7
+            }
+        }
 
-        val latitude = lat ?: myLocation?.latitude ?: return null
-        val longitude = lon ?: myLocation?.longitude ?: return null
+        val finalLat = latitude ?: myLocation?.latitude ?: return null
+        val finalLon = longitude ?: myLocation?.longitude ?: return null
 
         val lac = if (cellIdentity.lac != UNKNOWN_VALUE) cellIdentity.lac else 0
         val cid = if (cellIdentity.cid != UNKNOWN_VALUE) cellIdentity.cid.toLong() else 0L
@@ -531,8 +545,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             frequency = uarfcn,
             band = 0,
             technology = "WCDMA",
-            latitude = latitude,
-            longitude = longitude
+            latitude = finalLat,
+            longitude = finalLon
         )
     }
 
@@ -541,28 +555,33 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val cellIdentity = cellInfo.cellIdentity as? android.telephony.CellIdentityNr ?: return null
         val signal = cellInfo.cellSignalStrength as? android.telephony.CellSignalStrengthNr ?: return null
 
-        val lat: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.latitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
+        var latitude: Double? = null
+        var longitude: Double? = null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val latRaw = cellIdentity.latitude
+            if (latRaw != null && latRaw != 0L) {
+                latitude = latRaw / 1e7
             }
-        } else null
-
-        val lon: Double? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cellIdentity.longitude?.let { value ->
-                val converted = value / 1e7
-                if (converted != 0.0) converted else null
+            val lonRaw = cellIdentity.longitude
+            if (lonRaw != null && lonRaw != 0L) {
+                longitude = lonRaw / 1e7
             }
-        } else null
+        }
 
-        val latitude = lat ?: myLocation?.latitude ?: return null
-        val longitude = lon ?: myLocation?.longitude ?: return null
+        val finalLat = latitude ?: myLocation?.latitude ?: return null
+        val finalLon = longitude ?: myLocation?.longitude ?: return null
 
-        val band = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        var band = 0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                if (cellIdentity.bands.size() > 0) cellIdentity.bands[0] else 0
-            } catch (e: Exception) { 0 }
-        } else 0
+                if (cellIdentity.bands.size > 0) {
+                    band = cellIdentity.bands[0]
+                }
+            } catch (e: Exception) {
+                band = 0
+            }
+        }
 
         val tac = if (cellIdentity.tac != UNKNOWN_VALUE) cellIdentity.tac else 0
         val pci = if (cellIdentity.pci != UNKNOWN_VALUE) cellIdentity.pci else 0
@@ -582,8 +601,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             frequency = nrarfcn,
             band = band,
             technology = "5G NR",
-            latitude = latitude,
-            longitude = longitude
+            latitude = finalLat,
+            longitude = finalLon
         )
     }
 
