@@ -12,5 +12,6 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "NetAnalyzer"
+
+rootProject.name = "NetAnalyzer2.-0"
 include(":app")
