@@ -40,7 +40,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
 import java.io.File
-import kotlin.math.random
+import java.util.Random
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
@@ -120,19 +120,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun initializeUI() {
         mapContainer = findViewById(R.id.mapContainer)
 
-        // 1. Карта
         mapView = MapView(this)
         mapContainer.addView(mapView, 0, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
-        // 2. Индикатор загрузки
         loadingIndicator = ProgressBar(this).apply {
             visibility = View.GONE
             isIndeterminate = true
         }
         mapContainer.addView(loadingIndicator, FrameLayout.LayoutParams(120, 120, Gravity.CENTER))
 
-        // 3. Текст статуса
         statusText = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
@@ -146,7 +143,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(0, 90, 0, 0)
         })
 
-        // 4. Информационная панель
         infoPanelText = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 11f
@@ -165,7 +161,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 180)
         })
 
-        // 5. Компас — ВЕРХНИЙ ЛЕВЫЙ
         compassView = ImageView(this).apply {
             setImageResource(R.drawable.compass)
             elevation = 8f
@@ -175,7 +170,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        // 6. Кнопка "Диагностика" — ВЕРХНИЙ ПРАВЫЙ (самая верхняя)
         btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
         mapContainer.addView(btnDiagnostics, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -183,7 +177,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        // 7. Кнопка "Спутник" — ПОД диагностикой (top=80)
         btnSatellite = createButton("Спутник", Color.parseColor("#2196F3")) { toggleSatellite() }
         mapContainer.addView(btnSatellite, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -191,7 +184,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 80, 16, 16)
         })
 
-        // 8. Кнопка "Сканировать"
         btnScan = createButton("Сканировать", Color.parseColor("#9C27B0")) { scanCellTowers() }
         mapContainer.addView(btnScan, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -199,7 +191,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        // 9. Кнопка "Место"
         btnMyLocation = createButton("📍", Color.parseColor("#4CAF50")) { goToMyLocation() }
         mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(120, 120).apply {
             gravity = Gravity.BOTTOM or Gravity.END
@@ -239,7 +230,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // ИСПРАВЛЕНИЕ: Свой маркер пользователя вместо MyLocationNewOverlay
     private fun updateUserMarker() {
         val loc = myLocation ?: return
         if (userMarker == null) {
@@ -296,16 +286,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             var count = 0
             val userLat = myLocation?.latitude ?: 0.0
             val userLon = myLocation?.longitude ?: 0.0
+            val random = Random()
 
             for (cellInfo in cellInfos) {
                 if (!cellInfo.isRegistered) continue
                 if (cellInfo is CellInfoLte) {
-                    // ИСПРАВЛЕНИЕ: Вышки показываются с небольшим смещением от пользователя
-                    // (реальные координаты вышек недоступны без API 29+)
-                    val offsetLat = (random() - 0.5) * 0.02  // ~1км
-                    val offsetLon = (random() - 0.5) * 0.02
+                    val offsetLat = (random.nextDouble() - 0.5) * 0.02
+                    val offsetLon = (random.nextDouble() - 0.5) * 0.02
                     val geoPoint = GeoPoint(userLat + offsetLat, userLon + offsetLon)
-                    
+
                     val marker = Marker(mapView).apply {
                         position = geoPoint
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
@@ -322,7 +311,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapView.invalidate()
 
             if (count > 0) {
-                Toast.makeText(this, "Найдено $count LTE вышек (в районе пользователя)", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Найдено $count LTE вышек", Toast.LENGTH_LONG).show()
             } else {
                 Toast.makeText(this, "LTE вышки не найдены", Toast.LENGTH_LONG).show()
             }
@@ -337,11 +326,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val sb = StringBuilder()
             sb.appendLine("ДИАГНОСТИКА СЕТИ")
             sb.appendLine("━━━━━━━━━━━━━━━━━━━━")
-            
+
             val operatorName = try { telephonyManager.networkOperatorName } catch (e: Exception) { "Ошибка" }
             val networkOperator = try { telephonyManager.networkOperator } catch (e: Exception) { "—" }
             val networkType = try { telephonyManager.networkType } catch (e: Exception) { 0 }
-            
+
             sb.appendLine("Оператор: ${operatorName.ifEmpty { "Неизвестно" }}")
             sb.appendLine("MCC/MNC: ${networkOperator.ifEmpty { "—" }}")
             sb.appendLine("Тип сети: ${getNetworkTypeName(networkType)}")
@@ -355,12 +344,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
             sb.appendLine()
             sb.appendLine("Кэш карт: ${if (isKalugaRegionCached()) "ЕСТЬ" else "НЕТ"}")
-            sb.appendLine("Путь кэша: ${Configuration.getInstance().osmdroidTileCache}")
-            
+            sb.appendLine("Путь: ${Configuration.getInstance().osmdroidTileCache}")
+
             infoPanel.visibility = View.VISIBLE
             infoPanelText.text = sb.toString()
         } catch (e: Exception) {
-            Toast.makeText(this, "Ошибка диагностики: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -375,18 +364,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun isKalugaRegionCached(): Boolean {
         try {
             val tileCache = Configuration.getInstance().osmdroidTileCache
-            // Проверяем несколько возможных путей
             val possibleDirs = listOf(
                 File(tileCache, "Mapnik"),
                 File(tileCache, "mapnik"),
                 File(tileCache, "Tiles"),
                 tileCache
             )
-            
             for (dir in possibleDirs) {
-                if (dir.exists() && dir.listFiles()?.isNotEmpty() == true) {
-                    return true
-                }
+                if (dir.exists() && dir.listFiles()?.isNotEmpty() == true) return true
             }
             return false
         } catch (e: Exception) {
@@ -397,7 +382,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun startLocationUpdates() {
         if (!isLocationPermissionGranted) return
         try {
-            // Только GPS для точности
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER))
                 locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000L, 10f, locationListener)
         } catch (e: SecurityException) {
@@ -412,7 +396,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private inner class LocationUpdateListener : LocationListener {
         override fun onLocationChanged(location: Location) {
             myLocation = GeoPoint(location.latitude, location.longitude)
-            updateUserMarker()  // Обновляем маркер при новом местоположении
+            updateUserMarker()
         }
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
@@ -427,7 +411,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapView.controller.setZoom(16.0)
             Toast.makeText(this, "Центрировано", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Местоположение не определено. Подождите GPS...", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Местоположение не определено", Toast.LENGTH_SHORT).show()
         }
     }
 
