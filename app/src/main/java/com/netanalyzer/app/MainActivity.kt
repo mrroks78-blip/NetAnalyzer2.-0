@@ -364,7 +364,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val earfcn = if (ci.earfcn != UNKNOWN_VALUE) ci.earfcn else 0
         val rsrp = if (sig.rsrp != UNKNOWN_VALUE) sig.rsrp else 0
         val rsrq = if (sig.rsrq != UNKNOWN_VALUE) sig.rsrq else 0
-        val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
+        // ИСПРАВЛЕНИЕ: rssi доступен с API 29
+        val rssi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
+        } else 0
 
         val lat = myLocation?.latitude ?: return null
         val lon = myLocation?.longitude ?: return null
@@ -381,6 +384,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val cid = if (ci.cid != UNKNOWN_VALUE) ci.cid.toLong() else 0L
         val psc = if (ci.psc != UNKNOWN_VALUE) ci.psc else 0
         val arfcn = if (ci.arfcn != UNKNOWN_VALUE) ci.arfcn else 0
+        // GSM всегда имеет rssi
         val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
 
         val lat = myLocation?.latitude ?: return null
@@ -398,6 +402,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val cid = if (ci.cid != UNKNOWN_VALUE) ci.cid.toLong() else 0L
         val psc = if (ci.psc != UNKNOWN_VALUE) ci.psc else 0
         val uarfcn = if (ci.uarfcn != UNKNOWN_VALUE) ci.uarfcn else 0
+        // WCDMA всегда имеет rssi
         val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
 
         val lat = myLocation?.latitude ?: return null
@@ -416,7 +421,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val nrarfcn = if (ci.nrarfcn != UNKNOWN_VALUE) ci.nrarfcn else 0
         val rsrp = if (sig.rsrp != UNKNOWN_VALUE) sig.rsrp else 0
         val rsrq = if (sig.rsrq != UNKNOWN_VALUE) sig.rsrq else 0
-        val rssi = if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
+        // ИСПРАВЛЕНИЕ: rssi доступен с API 29
+        val rssi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (sig.rssi != UNKNOWN_VALUE) sig.rssi else 0
+        } else 0
 
         val lat = myLocation?.latitude ?: return null
         val lon = myLocation?.longitude ?: return null
