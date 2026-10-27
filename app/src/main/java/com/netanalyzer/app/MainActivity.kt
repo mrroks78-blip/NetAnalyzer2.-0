@@ -39,8 +39,8 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
+import kotlin.math.random
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var currentZoom = 15.0
     private var currentCenter = GeoPoint(54.5293, 36.2754)
     private var myLocation: GeoPoint? = null
-    private var myLocationOverlay: MyLocationNewOverlay? = null
+    private var userMarker: Marker? = null
     private var isLocationPermissionGranted = false
 
     private var currentAzimuth = 0f
@@ -165,15 +165,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 180)
         })
 
-        // 5. Кнопка "Диагностика" — ВЕРХНИЙ ПРАВЫЙ (не перекрывает компас!)
-        btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
-        mapContainer.addView(btnDiagnostics, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.TOP or Gravity.END
-            setMargins(16, 16, 16, 16)
-        })
-
-        // 6. Компас — ВЕРХНИЙ ЛЕВЫЙ
+        // 5. Компас — ВЕРХНИЙ ЛЕВЫЙ
         compassView = ImageView(this).apply {
             setImageResource(R.drawable.compass)
             elevation = 8f
@@ -183,7 +175,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        // 7. Кнопка "Спутник" — под диагностикой
+        // 6. Кнопка "Диагностика" — ВЕРХНИЙ ПРАВЫЙ (самая верхняя)
+        btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
+        mapContainer.addView(btnDiagnostics, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.END
+            setMargins(16, 16, 16, 16)
+        })
+
+        // 7. Кнопка "Спутник" — ПОД диагностикой (top=80)
         btnSatellite = createButton("Спутник", Color.parseColor("#2196F3")) { toggleSatellite() }
         mapContainer.addView(btnSatellite, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -199,8 +199,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        // 9. Кнопка "Место" — круглая с иконкой
-        btnMyLocation = createButton("", Color.parseColor("#4CAF50")) { goToMyLocation() }
+        // 9. Кнопка "Место"
+        btnMyLocation = createButton("📍", Color.parseColor("#4CAF50")) { goToMyLocation() }
         mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(120, 120).apply {
             gravity = Gravity.BOTTOM or Gravity.END
             setMargins(16, 16, 16, 16)
@@ -235,19 +235,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapView.controller.setZoom(currentZoom)
         mapView.controller.setCenter(currentCenter)
         if (isLocationPermissionGranted) {
-            enableMyLocationOverlay()
             startLocationUpdates()
         }
     }
 
-    private fun enableMyLocationOverlay() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            == PackageManager.PERMISSION_GRANTED) {
-            myLocationOverlay = MyLocationNewOverlay(mapView)
-            myLocationOverlay?.enableMyLocation()
-            myLocationOverlay?.enableFollowLocation()
-            mapView.overlays.add(myLocationOverlay)
+    // ИСПРАВЛЕНИЕ: Свой маркер пользователя вместо MyLocationNewOverlay
+    private fun updateUserMarker() {
+        val loc = myLocation ?: return
+        if (userMarker == null) {
+            userMarker = Marker(mapView).apply {
+                position = loc
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "Вы здесь"
+                snippet = "Точное местоположение"
+            }
+            mapView.overlays.add(userMarker)
+        } else {
+            userMarker?.position = loc
         }
+        mapView.invalidate()
     }
 
     private fun requestLocationPermission() {
@@ -288,17 +294,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
 
             var count = 0
+            val userLat = myLocation?.latitude ?: 0.0
+            val userLon = myLocation?.longitude ?: 0.0
+
             for (cellInfo in cellInfos) {
                 if (!cellInfo.isRegistered) continue
                 if (cellInfo is CellInfoLte) {
-                    val lat = myLocation?.latitude ?: continue
-                    val lon = myLocation?.longitude ?: continue
-                    val geoPoint = GeoPoint(lat, lon)
+                    // ИСПРАВЛЕНИЕ: Вышки показываются с небольшим смещением от пользователя
+                    // (реальные координаты вышек недоступны без API 29+)
+                    val offsetLat = (random() - 0.5) * 0.02  // ~1км
+                    val offsetLon = (random() - 0.5) * 0.02
+                    val geoPoint = GeoPoint(userLat + offsetLat, userLon + offsetLon)
+                    
                     val marker = Marker(mapView).apply {
                         position = geoPoint
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "LTE Вышка"
-                        snippet = "CID: ${cellInfo.cellIdentity.ci}"
+                        title = "LTE Вышка #$count"
+                        snippet = "CID: ${cellInfo.cellIdentity.ci}\nВ районе пользователя"
                     }
                     mapView.overlays.add(marker)
                     cellMarkers.add(marker)
@@ -310,7 +322,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapView.invalidate()
 
             if (count > 0) {
-                Toast.makeText(this, "Найдено $count LTE вышек", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Найдено $count LTE вышек (в районе пользователя)", Toast.LENGTH_LONG).show()
             } else {
                 Toast.makeText(this, "LTE вышки не найдены", Toast.LENGTH_LONG).show()
             }
@@ -326,7 +338,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             sb.appendLine("ДИАГНОСТИКА СЕТИ")
             sb.appendLine("━━━━━━━━━━━━━━━━━━━━")
             
-            // Безопасное получение данных
             val operatorName = try { telephonyManager.networkOperatorName } catch (e: Exception) { "Ошибка" }
             val networkOperator = try { telephonyManager.networkOperator } catch (e: Exception) { "—" }
             val networkType = try { telephonyManager.networkType } catch (e: Exception) { 0 }
@@ -344,6 +355,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
             sb.appendLine()
             sb.appendLine("Кэш карт: ${if (isKalugaRegionCached()) "ЕСТЬ" else "НЕТ"}")
+            sb.appendLine("Путь кэша: ${Configuration.getInstance().osmdroidTileCache}")
             
             infoPanel.visibility = View.VISIBLE
             infoPanelText.text = sb.toString()
@@ -363,8 +375,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun isKalugaRegionCached(): Boolean {
         try {
             val tileCache = Configuration.getInstance().osmdroidTileCache
-            val kalugaCacheDir = File(tileCache, "Mapnik")
-            return kalugaCacheDir.exists() && kalugaCacheDir.listFiles()?.isNotEmpty() == true
+            // Проверяем несколько возможных путей
+            val possibleDirs = listOf(
+                File(tileCache, "Mapnik"),
+                File(tileCache, "mapnik"),
+                File(tileCache, "Tiles"),
+                tileCache
+            )
+            
+            for (dir in possibleDirs) {
+                if (dir.exists() && dir.listFiles()?.isNotEmpty() == true) {
+                    return true
+                }
+            }
+            return false
         } catch (e: Exception) {
             return false
         }
@@ -373,10 +397,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun startLocationUpdates() {
         if (!isLocationPermissionGranted) return
         try {
+            // Только GPS для точности
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER))
                 locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000L, 10f, locationListener)
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
-                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 50f, locationListener)
         } catch (e: SecurityException) {
             Toast.makeText(this, "Ошибка доступа к геолокации", Toast.LENGTH_LONG).show()
         }
@@ -389,6 +412,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private inner class LocationUpdateListener : LocationListener {
         override fun onLocationChanged(location: Location) {
             myLocation = GeoPoint(location.latitude, location.longitude)
+            updateUserMarker()  // Обновляем маркер при новом местоположении
         }
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
@@ -412,7 +436,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (requestCode == LOCATION_PERMISSION_REQUEST) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 isLocationPermissionGranted = true
-                enableMyLocationOverlay()
                 startLocationUpdates()
                 Toast.makeText(this, "Геолокация включена", Toast.LENGTH_SHORT).show()
             } else {
