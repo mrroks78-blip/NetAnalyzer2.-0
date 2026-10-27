@@ -7,8 +7,6 @@ import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RadialGradient
-import android.graphics.Shader
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -54,6 +52,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var mapView: MapView
     private lateinit var mapContainer: FrameLayout
+    private lateinit var btnSatellite: Button
     private lateinit var btnMyLocation: Button
     private lateinit var btnScan: Button
     private lateinit var btnDiagnostics: Button
@@ -67,6 +66,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private lateinit var telephonyManager: TelephonyManager
 
+    private var isSatellite = false
     private var currentZoom = 15.0
     private var currentCenter = GeoPoint(54.5293, 36.2754)
     private var myLocation: GeoPoint? = null
@@ -84,9 +84,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var hasAccelerometer = false
     private var hasMagnetometer = false
 
-    private val heatmapOverlay = CoverageHeatmapOverlay()
-    private val locationListener = LocationUpdateListener()
     private val cellMarkers = mutableListOf<Marker>()
+    private val locationListener = LocationUpdateListener()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,16 +120,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun initializeUI() {
         mapContainer = findViewById(R.id.mapContainer)
 
+        // 1. Карта
         mapView = MapView(this)
         mapContainer.addView(mapView, 0, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
+        // 2. Индикатор загрузки
         loadingIndicator = ProgressBar(this).apply {
             visibility = View.GONE
             isIndeterminate = true
         }
         mapContainer.addView(loadingIndicator, FrameLayout.LayoutParams(120, 120, Gravity.CENTER))
 
+        // 3. Текст статуса
         statusText = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
@@ -144,6 +146,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(0, 90, 0, 0)
         })
 
+        // 4. Информационная панель
         infoPanelText = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 11f
@@ -162,22 +165,33 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 180)
         })
 
+        // 5. Кнопка "Диагностика" — ВЕРХНИЙ ПРАВЫЙ (не перекрывает компас!)
         btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
         mapContainer.addView(btnDiagnostics, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.TOP or Gravity.END
             setMargins(16, 16, 16, 16)
         })
 
+        // 6. Компас — ВЕРХНИЙ ЛЕВЫЙ
         compassView = ImageView(this).apply {
             setImageResource(R.drawable.compass)
             elevation = 8f
         }
         mapContainer.addView(compassView, FrameLayout.LayoutParams(160, 160).apply {
             gravity = Gravity.TOP or Gravity.START
+            setMargins(16, 16, 16, 16)
+        })
+
+        // 7. Кнопка "Спутник" — под диагностикой
+        btnSatellite = createButton("Спутник", Color.parseColor("#2196F3")) { toggleSatellite() }
+        mapContainer.addView(btnSatellite, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.END
             setMargins(16, 80, 16, 16)
         })
 
+        // 8. Кнопка "Сканировать"
         btnScan = createButton("Сканировать", Color.parseColor("#9C27B0")) { scanCellTowers() }
         mapContainer.addView(btnScan, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -185,7 +199,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        btnMyLocation = createButton("Место", Color.parseColor("#4CAF50")) { goToMyLocation() }
+        // 9. Кнопка "Место" — круглая с иконкой
+        btnMyLocation = createButton("", Color.parseColor("#4CAF50")) { goToMyLocation() }
         mapContainer.addView(btnMyLocation, FrameLayout.LayoutParams(120, 120).apply {
             gravity = Gravity.BOTTOM or Gravity.END
             setMargins(16, 16, 16, 16)
@@ -219,7 +234,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapView.isFlingEnabled = true
         mapView.controller.setZoom(currentZoom)
         mapView.controller.setCenter(currentCenter)
-        mapView.overlays.add(heatmapOverlay)
         if (isLocationPermissionGranted) {
             enableMyLocationOverlay()
             startLocationUpdates()
@@ -242,6 +256,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
                 LOCATION_PERMISSION_REQUEST)
         }
+    }
+
+    private fun toggleSatellite() {
+        isSatellite = !isSatellite
+        if (isSatellite) {
+            Toast.makeText(this, "Спутник недоступен в РФ", Toast.LENGTH_LONG).show()
+            isSatellite = false
+        }
+        mapView.setTileSource(TileSourceFactory.MAPNIK)
+        btnSatellite.text = "Спутник"
+        mapView.invalidate()
     }
 
     private fun scanCellTowers() {
@@ -296,24 +321,35 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun showDiagnostics() {
-        val sb = StringBuilder()
-        sb.appendLine("ДИАГНОСТИКА СЕТИ")
-        sb.appendLine("━━━━━━━━━━━━━━━━━━━━")
-        sb.appendLine("Оператор: ${telephonyManager.networkOperatorName.ifEmpty { "Неизвестно" }}")
-        sb.appendLine("MCC/MNC: ${telephonyManager.networkOperator.ifEmpty { "—" }}")
-        sb.appendLine("Тип сети: ${getNetworkTypeName(telephonyManager.networkType)}")
-        sb.appendLine()
-        sb.appendLine("Местоположение:")
-        if (myLocation != null) {
-            sb.appendLine("  Широта: ${String.format("%.5f", myLocation!!.latitude)}")
-            sb.appendLine("  Долгота: ${String.format("%.5f", myLocation!!.longitude)}")
-        } else {
-            sb.appendLine("  Не определено")
+        try {
+            val sb = StringBuilder()
+            sb.appendLine("ДИАГНОСТИКА СЕТИ")
+            sb.appendLine("━━━━━━━━━━━━━━━━━━━━")
+            
+            // Безопасное получение данных
+            val operatorName = try { telephonyManager.networkOperatorName } catch (e: Exception) { "Ошибка" }
+            val networkOperator = try { telephonyManager.networkOperator } catch (e: Exception) { "—" }
+            val networkType = try { telephonyManager.networkType } catch (e: Exception) { 0 }
+            
+            sb.appendLine("Оператор: ${operatorName.ifEmpty { "Неизвестно" }}")
+            sb.appendLine("MCC/MNC: ${networkOperator.ifEmpty { "—" }}")
+            sb.appendLine("Тип сети: ${getNetworkTypeName(networkType)}")
+            sb.appendLine()
+            sb.appendLine("Местоположение:")
+            if (myLocation != null) {
+                sb.appendLine("  Широта: ${String.format("%.5f", myLocation!!.latitude)}")
+                sb.appendLine("  Долгота: ${String.format("%.5f", myLocation!!.longitude)}")
+            } else {
+                sb.appendLine("  Не определено (подождите GPS)")
+            }
+            sb.appendLine()
+            sb.appendLine("Кэш карт: ${if (isKalugaRegionCached()) "ЕСТЬ" else "НЕТ"}")
+            
+            infoPanel.visibility = View.VISIBLE
+            infoPanelText.text = sb.toString()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Ошибка диагностики: ${e.message}", Toast.LENGTH_LONG).show()
         }
-        sb.appendLine()
-        sb.appendLine("Кэш карт: ${if (isKalugaRegionCached()) "ЕСТЬ" else "НЕТ"}")
-        infoPanel.visibility = View.VISIBLE
-        infoPanelText.text = sb.toString()
     }
 
     private fun getNetworkTypeName(type: Int): String = when (type) {
@@ -325,9 +361,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun isKalugaRegionCached(): Boolean {
-        val tileCache = Configuration.getInstance().osmdroidTileCache
-        val kalugaCacheDir = File(tileCache, "Mapnik")
-        return kalugaCacheDir.exists() && kalugaCacheDir.listFiles()?.isNotEmpty() == true
+        try {
+            val tileCache = Configuration.getInstance().osmdroidTileCache
+            val kalugaCacheDir = File(tileCache, "Mapnik")
+            return kalugaCacheDir.exists() && kalugaCacheDir.listFiles()?.isNotEmpty() == true
+        } catch (e: Exception) {
+            return false
+        }
     }
 
     private fun startLocationUpdates() {
@@ -363,7 +403,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapView.controller.setZoom(16.0)
             Toast.makeText(this, "Центрировано", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Местоположение не определено", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Местоположение не определено. Подождите GPS...", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -374,8 +414,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 isLocationPermissionGranted = true
                 enableMyLocationOverlay()
                 startLocationUpdates()
+                Toast.makeText(this, "Геолокация включена", Toast.LENGTH_SHORT).show()
             } else {
                 isLocationPermissionGranted = false
+                Toast.makeText(this, "Геолокация отключена", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -462,9 +504,5 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun hideLoading() {
         loadingIndicator.visibility = View.GONE
         statusText.visibility = View.GONE
-    }
-
-    private class CoverageHeatmapOverlay : Overlay() {
-        override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {}
     }
 }
