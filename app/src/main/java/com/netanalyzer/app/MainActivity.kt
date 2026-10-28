@@ -103,6 +103,30 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         isLocationPermissionGranted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+        
+        // ИСПРАВЛЕНИЕ #3: Если разрешение уже есть — сразу запускаем GPS
+        if (isLocationPermissionGranted) {
+            startLocationUpdates()
+            tryLastKnownLocation()
+        }
+    }
+
+    private fun tryLastKnownLocation() {
+        try {
+            val gpsLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            val netLoc = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            val bestLoc = when {
+                gpsLoc != null -> gpsLoc
+                netLoc != null -> netLoc
+                else -> null
+            }
+            if (bestLoc != null) {
+                myLocation = GeoPoint(bestLoc.latitude, bestLoc.longitude)
+                updateUserMarker()
+                currentCenter = myLocation!!
+                mapView.controller.setCenter(currentCenter)
+            }
+        } catch (e: SecurityException) {}
     }
 
     private fun initializeOSMDroid() {
@@ -170,18 +194,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setMargins(16, 16, 16, 16)
         })
 
-        btnDiagnostics = createButton("Диагностика", Color.parseColor("#FF5722")) { showDiagnostics() }
+        // ИСПРАВЛЕНИЕ #2: Кнопки в правом верхнем углу с правильными отступами
+        // "Диагностика" — маленькая кнопка сверху
+        btnDiagnostics = createButton("Диагн.", Color.parseColor("#FF5722")) { showDiagnostics() }
         mapContainer.addView(btnDiagnostics, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.TOP or Gravity.END
             setMargins(16, 16, 16, 16)
         })
 
+        // "Спутник" — ПОД "Диагностикой" с большим отступом
         btnSatellite = createButton("Спутник", Color.parseColor("#2196F3")) { toggleSatellite() }
         mapContainer.addView(btnSatellite, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.TOP or Gravity.END
-            setMargins(16, 80, 16, 16)
+            setMargins(16, 70, 16, 16)  // было 80, стало 70
         })
 
         btnScan = createButton("Сканировать", Color.parseColor("#9C27B0")) { scanCellTowers() }
@@ -204,8 +231,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             setBackgroundColor(backgroundColor)
             setTextColor(Color.WHITE)
             elevation = 8f
-            setPadding(20, 10, 20, 10)
-            textSize = 13f
+            setPadding(16, 8, 16, 8)  // УМЕНЬШЕН размер кнопки
+            textSize = 12f
             setOnClickListener { onClick() }
         }
     }
@@ -220,9 +247,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun setupMap() {
+        // ИСПРАВЛЕНИЕ #1: Принудительно устанавливаем Mapnik и включаем кэш
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
         mapView.isFlingEnabled = true
+        mapView.setUseDataConnection(true)  // Разрешаем онлайн + офлайн
         mapView.controller.setZoom(currentZoom)
         mapView.controller.setCenter(currentCenter)
         if (isLocationPermissionGranted) {
@@ -368,6 +397,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 File(tileCache, "Mapnik"),
                 File(tileCache, "mapnik"),
                 File(tileCache, "Tiles"),
+                File(tileCache, "tiles"),
                 tileCache
             )
             for (dir in possibleDirs) {
@@ -382,8 +412,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun startLocationUpdates() {
         if (!isLocationPermissionGranted) return
         try {
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER))
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000L, 10f, locationListener)
+            // ИСПРАВЛЕНИЕ #3: GPS + Network для быстрого фикса
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER, 2000L, 5f, locationListener
+                )
+            }
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER, 5000L, 50f, locationListener
+                )
+            }
+            // Быстрый фикс через lastKnownLocation
+            tryLastKnownLocation()
         } catch (e: SecurityException) {
             Toast.makeText(this, "Ошибка доступа к геолокации", Toast.LENGTH_LONG).show()
         }
@@ -397,6 +438,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         override fun onLocationChanged(location: Location) {
             myLocation = GeoPoint(location.latitude, location.longitude)
             updateUserMarker()
+            currentCenter = myLocation!!
         }
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
@@ -411,7 +453,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapView.controller.setZoom(16.0)
             Toast.makeText(this, "Центрировано", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Местоположение не определено", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Местоположение не определено. Выйдите на улицу.", Toast.LENGTH_LONG).show()
         }
     }
 
